@@ -1,0 +1,38 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "algopt/rebalancer/solver/summary/LabeledConstraints.h"
+
+namespace facebook::rebalancer {
+
+interface::ConstraintSummary LabeledConstraints::getSummary() const {
+  interface::ConstraintSummary result;
+  *result.brokenVal() = getRoot()->value;
+  *result.brokenCount() = 0;
+  auto& constraints = getExpressions();
+  result.constraints()->reserve(constraints.size());
+  for (auto& constraint : constraints) {
+    interface::SingleConstraintSummary single;
+    *single.name() = constraint->name;
+    *single.desc() = constraint->expression->description;
+    *single.value() = constraint->expression->value;
+    if (*single.value() > 0) {
+      (*result.brokenCount())++;
+    }
+    result.constraints()->push_back(std::move(single));
+  }
+  return result;
+}
+
+} // namespace facebook::rebalancer

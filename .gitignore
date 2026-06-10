@@ -1,0 +1,12 @@
+build/
+!build/deps/
+!build/deps/github_hashes/
+!build/deps/github_hashes/**
+.vscode/
+gen-cpp2/
+__pycache__/
+.claude/*
+!.claude/skills/
+!.claude/skills/**
+node_modules/
+.cmake_prefix_path

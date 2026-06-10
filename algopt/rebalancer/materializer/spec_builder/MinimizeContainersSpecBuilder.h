@@ -1,0 +1,61 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#pragma once
+
+#include "algopt/rebalancer/materializer/spec_builder/SpecBuilder.h"
+#include "algopt/rebalancer/materializer/utils/ExpressionBuilder.h"
+
+namespace facebook::rebalancer::materializer {
+
+class MinimizeContainersSpecBuilder : public SpecBuilder {
+ public:
+  MinimizeContainersSpecBuilder(
+      std::shared_ptr<const entities::Universe> universe,
+      interface::MinimizeContainersSpec spec,
+      bool continuousExpressions);
+
+  folly::coro::Task<ExprPtr> goalCoro(
+      ExpressionBuilder& expressionBuilder) const override;
+
+  folly::coro::Task<std::vector<ConstraintInfo>> constraints(
+      ExpressionBuilder& expressionBuilder) const override;
+
+  std::string description() const override;
+
+  SpecParameters getSpecInfo() const override;
+
+ private:
+  folly::coro::Task<ExprPtr> getObjectiveExpr(
+      ExpressionBuilder& expressionBuilder) const;
+
+  folly::coro::Task<ExprPtr> getMinimizeContainersContinuousFormulaExpr(
+      ExpressionBuilder& expressionBuilder) const;
+
+  folly::coro::Task<ExprPtr> getMinimizeContainersDiscreteFormulaExpr(
+      ExpressionBuilder& expressionBuilder) const;
+
+  folly::coro::Task<ExprPtr> getMinimizeContainerLegacyFormulaExpr(
+      ExpressionBuilder& expressionBuilder) const;
+
+ private:
+  interface::MinimizeContainersSpec spec_;
+  bool continuousExpressions_;
+  entities::ScopeId scopeId_;
+  entities::DimensionId dimensionId_;
+  const entities::ObjectDimension& objectDimension_;
+  const std::map<std::string, double>& containerCosts_;
+};
+
+} // namespace facebook::rebalancer::materializer

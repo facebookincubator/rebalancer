@@ -1,0 +1,199 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: release
+
+# Auto-trigger when version.txt is bumped on main. The release pipeline
+# does NOT rebuild — it waits for the per-push CI workflows triggered by
+# the same commit (lint-version, linux, mac, wheels, sdist, packaging_linux,
+# packaging_mac) to succeed, downloads their artifacts, publishes wheels +
+# sdist to TestPyPI, then creates the v<version> tag and a GitHub Release.
+#
+# If any sibling workflow fails the release stops — no upload, no tag.
+on:
+  push:
+    branches: [main, richard/packaging]
+    paths:
+    - 'version.txt'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Commit SHA to release (default: latest main)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write     # signed-tag push, GitHub Release creation
+  actions: read       # download-artifact from sibling workflow runs
+  id-token: write     # OIDC for trusted PyPI/TestPyPI publishing
+
+# Never cancel an in-flight release — they end in tag creation + PyPI upload,
+# both irreversible. A second version.txt bump must wait for the first to
+# finish.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  PROJECT_NAME: rebalancer
+  # Workflows that must succeed for this SHA before we publish.
+  REQUIRED_WORKFLOWS: "lint-version.yml linux.yml mac.yml wheels.yml sdist.yml packaging_linux.yml packaging_mac.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      sha: ${{ steps.read.outputs.sha }}
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        ref: ${{ github.event.inputs.ref || github.sha }}
+        fetch-depth: 0
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+    - run: pip install packaging
+    - name: Lint version.txt
+      run: python3 tools/lint-version.py
+    - name: Capture version + SHA
+      id: read
+      run: |
+        VERSION=$(cat version.txt)
+        SHA=$(git rev-parse HEAD)
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "sha=$SHA"         >> "$GITHUB_OUTPUT"
+        echo "Releasing v$VERSION at $SHA"
+
+  wait-for-builds:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SHA: ${{ needs.validate.outputs.sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+    - name: Wait for required sibling workflows
+      run: |
+        set -euo pipefail
+        for wf in $REQUIRED_WORKFLOWS; do
+          echo "::group::Waiting for $wf @ $SHA"
+          deadline=$(( $(date +%s) + 60 * 80 ))   # 80 min per workflow ceiling
+          while :; do
+            run_json=$(gh run list \
+              --repo "${{ github.repository }}" \
+              --workflow "$wf" \
+              --commit "$SHA" \
+              --limit 1 \
+              --json status,conclusion,databaseId,url 2>/dev/null || echo '[]')
+            status=$(echo "$run_json"     | jq -r '.[0].status     // "missing"')
+            conclusion=$(echo "$run_json" | jq -r '.[0].conclusion // ""')
+            url=$(echo "$run_json"        | jq -r '.[0].url        // ""')
+            case "$status" in
+              completed)
+                if [ "$conclusion" = "success" ]; then
+                  echo "✅ $wf succeeded ($url)"
+                  break
+                fi
+                echo "::error::$wf finished with conclusion=$conclusion ($url) — aborting release"
+                exit 1
+                ;;
+              missing)
+                echo "  $wf has no run for $SHA yet; waiting..."
+                ;;
+              *)
+                echo "  $wf status=$status; waiting..."
+                ;;
+            esac
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::$wf did not complete within 80 minutes — aborting"
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "::endgroup::"
+        done
+        echo "All required workflows succeeded for $SHA."
+
+  publish:
+    needs: [validate, wait-for-builds]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: testpypi   # configure trusted publisher on test.pypi.org
+    env:
+      SHA: ${{ needs.validate.outputs.sha }}
+      VERSION: ${{ needs.validate.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        ref: ${{ needs.validate.outputs.sha }}
+        fetch-depth: 0
+
+    - name: Download wheel artifacts (linux + macos)
+      run: |
+        mkdir -p dist
+        for wf in wheels.yml sdist.yml packaging_linux.yml packaging_mac.yml; do
+          run_id=$(gh run list \
+            --repo "${{ github.repository }}" \
+            --workflow "$wf" \
+            --commit "$SHA" \
+            --limit 1 \
+            --json databaseId --jq '.[0].databaseId')
+          echo "Downloading artifacts from $wf run $run_id"
+          gh run download "$run_id" --repo "${{ github.repository }}" --dir _stage
+        done
+        # Flatten everything into dist/
+        find _stage -type f \( -name '*.whl' -o -name '*.tar.gz' \
+                              -o -name '*.deb' -o -name '*.rpm' \
+                              -o -name '*.bottle.tar.gz' \) \
+          -exec cp -v {} dist/ \;
+        ls -la dist/
+
+    - name: Publish wheels + sdist to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        # Only ship Python distributions — leave deb/rpm/bottle on disk for
+        # the GitHub Release step.
+        packages-dir: dist
+        # Skip non-Python files in dist/
+        skip-existing: true
+        # gh-action-pypi-publish picks up *.whl and *.tar.gz; the deb/rpm
+        # extensions are silently ignored.
+
+    - name: Create signed tag
+      run: |
+        git config user.name  "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        TAG="v${VERSION}"
+        if git rev-parse "$TAG" >/dev/null 2>&1; then
+          echo "::error::tag $TAG already exists — refusing to overwrite"
+          exit 1
+        fi
+        git tag -a "$TAG" -m "Release $TAG"
+        git push origin "$TAG"
+
+    - name: Create GitHub Release with all artifacts
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{ env.VERSION }}
+        name: v${{ env.VERSION }}
+        generate_release_notes: true
+        files: |
+          dist/*.whl
+          dist/*.tar.gz
+          dist/*.deb
+          dist/*.rpm

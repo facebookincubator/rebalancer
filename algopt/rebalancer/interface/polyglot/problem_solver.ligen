@@ -1,0 +1,246 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+cpp_include "algopt/rebalancer/interface/polyglot/ProblemSolverBinding.h";
+namespace "facebook::rebalancer::binding";
+include "algopt/rebalancer/interface/polyglot/async_manifold_upload_handle.ligen" as manifold;
+thrift_include "algopt/rebalancer/interface/thrift/ProblemSolver.thrift";
+thrift_include "algopt/rebalancer/interface/thrift/Types.thrift";
+thrift_include "algopt/rebalancer/algopt_common/thrift/Types.thrift" as CommonTypes;
+@cpp_container_override("::folly::F14FastMap")
+typedef unordered_map<string, double> StringToDoubleMap;
+@cpp_container_override("::folly::F14FastMap")
+typedef unordered_map<string, StringToDoubleMap> StringToStringToDoubleMap;
+
+// Can't call this ProblemSolver unless ProblemSolverService deleted
+unique class ProblemSolverBinding {
+  ctor(string serviceName, string serviceScope, bool canExecuteAsync) throws;
+
+  /**
+   *  returns a random number chosen by fair dice roll
+   */
+  i32 ping() noexcept;
+
+  // Ligen defaults to snake_casing python functions so have to override
+  @output_name(py="addConstraint")
+  mut void addConstraint(
+    ProblemSolver.ConstraintSpecs spec,
+    option<Types.ConstraintPolicy> policy,
+    option<float> invalidCost,
+    option<float> invalidState,
+    option<i32> tuplePosIfBroken,
+  ) throws;
+
+  @output_name(py="addContainerDimension")
+  mut void addContainerDimension(
+    string dimensionName,
+    unordered_map<string, double> containerToValue,
+    double defaultValue,
+  ) throws;
+
+  @output_name(py="addGoal")
+  mut void addGoal(
+    ProblemSolver.GoalSpecs spec,
+    float weight,
+    option<i32> tuplePos,
+  ) throws;
+
+  @output_name(py="addGoalBoundary")
+  mut void addGoalBoundary() throws;
+
+  @output_name(py="addObjectDimension")
+  mut void addObjectDimension(
+    string dimensionName,
+    unordered_map<string, double> objectToValue,
+    double defaultValue,
+  ) throws;
+
+  @output_name(py="addObjectDimensionVector")
+  mut void addObjectDimensionVector(
+    string dimensionName,
+    unordered_map<string, vec<double>> objectToValues,
+    double defaultValue,
+  ) throws;
+
+  @output_name(py="addDynamicObjectDimension")
+  mut void addDynamicObjectDimension(
+    string dimensionName,
+    string scope,
+    StringToStringToDoubleMap scopeItemToObjectToValue,
+    double defaultValue,
+  ) throws;
+
+  @output_name(py="addDynamicObjectDimensionByPartition")
+  mut void addDynamicObjectDimensionByPartition(
+    string dimensionName,
+    string scope,
+    string partitionName,
+    StringToStringToDoubleMap scopeItemToGroupToValue,
+    double defaultValue,
+  ) throws;
+
+  @output_name(py="addPartition")
+  mut void addPartition(
+    string partitionName,
+    unordered_map<string, vec<string>> groupToObjects,
+  ) throws;
+
+  @output_name(py="addScope")
+  mut void addScope(
+    string scopeName,
+    unordered_map<string, string> containerToScopeItem,
+  ) throws;
+
+  @output_name(py="addScopeDimension")
+  mut void addScopeDimension(
+    string dimensionName,
+    string scopeName,
+    unordered_map<string, double> scopeItemToValue,
+  ) throws;
+
+  @output_name(py="addSimilarContainers")
+  mut void addSimilarContainers(
+    vec<vec<string>> similarContainerClasses,
+  ) throws;
+
+  @output_name(py="addRoutingConfig")
+  mut void addRoutingConfig(
+    string configName,
+    string scopeName,
+    string partitionName,
+    unordered_map<string, Types.GroupRoutingRings> groupToRoutingRings,
+    unordered_map<string, unordered_map<string, double>> originToDestinationLatency,
+    option<unordered_map<string, vec<vec<string>>>> defaultOriginToDestinationScopeItemSets,
+  ) throws;
+
+  @output_name(py="addObjectPartitionRoutingDimension")
+  mut void addObjectPartitionRoutingDimension(
+    string dimensionName,
+    string partitionName,
+    string routingConfigName,
+    unordered_map<string, double> groupToValue,
+    double defaultValue,
+  ) throws;
+
+  @output_name(py="addObjectPartitionRoutingDimensionWithStaticValues")
+  mut void addObjectPartitionRoutingDimensionWithStaticValues(
+    string dimensionName,
+    string partitionName,
+    string routingConfigName,
+    unordered_map<string, double> groupToValue,
+    unordered_map<string, double> groupToStaticValue,
+    double defaultValue,
+    double defaultStaticValue,
+  ) throws;
+
+  @output_name(py="addSolver")
+  mut void addSolver(ProblemSolver.SolverSpecs spec) throws;
+
+  @output_name(py="disableSolutionSummary")
+  mut void disableSolutionSummary() throws;
+
+  @output_name(py="enableMoveStats")
+  mut void enableMoveStats(Types.MoveStatsSpec spec) throws;
+
+  @output_name(py="enableMoveValidator")
+  mut void enableMoveValidator(Types.TupperwareMoveValidatorSpec spec) throws;
+
+  @output_name(py="enableProfiler")
+  mut void enableProfiler() throws;
+
+  @output_name(py="enableRestrictMovingObjectOnlyOnce")
+  mut void enableRestrictMovingObjectOnlyOnce() throws;
+
+  @output_name(py="disableScubaLogging")
+  mut void disableScubaLogging() throws;
+
+  @output_name(py="enableStableAsMuchAsPossible")
+  mut void enableStableAsMuchAsPossible() throws;
+
+  @output_name(py="getCurrentGoalIndex")
+  i32 getCurrentGoalIndex() throws;
+
+  @output_name(py="getRunId")
+  string getRunId() throws;
+
+  @output_name(py="printProblemSetup")
+  void printProblemSetup() throws;
+
+  @output_name(py="getProblemSummary")
+  string getProblemSummary() throws;
+
+  @output_name(py="persistToManifold")
+  mut void persistToManifold(
+    option<manifold.AsyncManifoldUploadHandle> manifoldUploadHandle,
+  ) throws;
+
+  @output_name(py="publishMetrics")
+  mut void publishMetrics() throws;
+
+  @output_name(py="setAssignment")
+  mut void setAssignment(
+    unordered_map<string, vec<string>> containerToObjects,
+  ) throws;
+
+  @output_name(py="setCompactAssignment")
+  mut void setCompactAssignment(
+    unordered_map<string, unordered_map<string, i64>> compactAssignmentInput,
+  ) throws;
+
+  @output_name(py="setConstraintPolicy")
+  mut void setConstraintPolicy(Types.ConstraintPolicy policy) throws;
+
+  @output_name(py="setDefaultConstraintParams")
+  mut void setDefaultConstraintParams(Types.ConstraintParams params) throws;
+
+  @output_name(py="setContainerName")
+  mut void setContainerName(string containerName) throws;
+
+  @output_name(py="setFeasibilityTolerance")
+  mut void setFeasibilityTolerance(double feasibilityTolerance) throws;
+
+  @output_name(py="setLogLevel")
+  mut void setLogLevel(string level) throws;
+
+  @output_name(py="setManifoldBackupParams")
+  mut void setManifoldBackupParams(
+    ProblemSolver.ManifoldBackupParams params,
+    option<manifold.AsyncManifoldUploadHandle> manifoldUploadHandle,
+  ) throws;
+
+  @output_name(py="setLoggingLabel")
+  mut void setLoggingLabel(string loggingLabel) throws;
+
+  @output_name(py="setObjectName")
+  mut void setObjectName(string objectName) throws;
+
+  @output_name(py="setRunId")
+  mut void setRunId(string runId) throws;
+
+  mut Types.AssignmentSolution solve() throws;
+
+  @output_name(py="useParallelizedNewMaterializer")
+  mut void useParallelizedNewMaterializer() throws;
+
+  @output_name(py="shouldUseDynamicObjectOrdering")
+  mut void shouldUseDynamicObjectOrdering(bool useDynamicObjectOrdering) throws;
+
+  @output_name(py="enableInvalidMoveFilter")
+  mut void enableInvalidMoveFilter(bool enable) throws;
+
+  @output_name(py="setPrecision")
+  mut void setPrecision(
+    CommonTypes.PrecisionTolerances precisionTolerances,
+  ) throws;
+}

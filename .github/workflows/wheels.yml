@@ -1,0 +1,175 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: wheels
+
+on:
+  push:
+    branches: [main, richard/packaging, richard/packaging2]
+    tags: ['v*']
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+    - 'pyproject.toml'
+    - 'src/rebalancer/**'
+    - 'CMakeLists.txt'
+    - 'version.txt'
+    - '.github/workflows/wheels.yml'
+    - 'tools/wheels/**'
+    - 'tools/packages/**'
+    - 'build/fbcode_builder/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: wheels-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Fan out across (os, python ABI) so each cell is its own GHA job and
+    # the matrix runs in parallel. cibuildwheel inside each cell builds
+    # exactly one ABI -- without this split, cibuildwheel iterates the
+    # ABIs sequentially in a single job and the wall-clock cost is N x
+    # one-wheel-build.
+    name: wheels-${{ matrix.os }}-${{ matrix.py }}
+    runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [linux, macos]
+        py: [cp312, cp313, cp314]
+        include:
+        - os: linux
+          runs_on: 16-core-ubuntu
+          cibw_archs: x86_64
+          cibw_image: quay.io/pypa/manylinux_2_28_x86_64
+          timeout_minutes: 60
+        - os: macos
+          runs_on: macos-14-xlarge
+          cibw_archs: arm64
+          timeout_minutes: 60
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        # cibuildwheel reads version.txt indirectly via scikit-build-core; no
+        # tags are needed at wheel-build time.
+        fetch-depth: 1
+
+    - uses: pypa/cibuildwheel@v3.1
+      env:
+        # One Python ABI per matrix cell.
+        CIBW_BUILD: "${{ matrix.py }}-*"
+        CIBW_SKIP: "*-musllinux* *_i686 pp*"
+        CIBW_ARCHS: ${{ matrix.cibw_archs }}
+
+        # Linux: build inside the same manylinux container the main C++ build
+        # uses, so the wheel-bundled .so is binary-identical to the .deb/.rpm
+        # version.
+        CIBW_MANYLINUX_X86_64_IMAGE: ${{ matrix.cibw_image }}
+        CIBW_CONTAINER_ENGINE: docker
+
+        # CLANG19_PREINSTALLED tells the clang19 getdeps manifest a compatible
+        # clang is already on PATH (before_all_linux.sh dnf-installs clang 20,
+        # which is forward-compatible with the project's "clang19+" need).
+        # CC/CXX point scikit-build-core's wheel-build cmake at clang
+        # (cibuildwheel default is the gcc-toolset gcc).
+        CIBW_ENVIRONMENT_LINUX: >-
+          CLANG19_PREINSTALLED=1
+          CC=clang
+          CXX=clang++
+
+        # Repair: bundle getdeps-installed shared libs (libgflags.so, etc.)
+        # into the wheel via auditwheel.
+        CIBW_REPAIR_WHEEL_COMMAND_LINUX: bash tools/wheels/repair_linux.sh {dest_dir} {wheel}
+
+        # Run getdeps to produce the dep tree, then write .cmake_prefix_path
+        # for the wheel-build cmake invocation to read via CMakeLists.txt.
+        CIBW_BEFORE_ALL_LINUX: bash tools/wheels/before_all_linux.sh
+
+        # macOS environment:
+        #   * MACOSX_DEPLOYMENT_TARGET=14.0 -- Homebrew on macos-14-xlarge
+        #     ships bottles compiled with target 14.0 (Sonoma). delocate
+        #     refuses to bundle those into a wheel announcing an older target,
+        #     so we pin to the highest target any bundled dylib advertises.
+        #     Decision (2026-05-08, autonomous):
+        #       Rejected -- bumping target down to 11.0 by source-building
+        #       every dep via getdeps. Would require pulling boost/openssl/
+        #       icu/etc. into the getdeps tree instead of relying on Homebrew
+        #       bottles. Substantial extra compile time and a different
+        #       fragility surface. Not worth it pre-1.0.
+        #       Rejected -- shipping wheels per OS minor (11/12/13/14). No
+        #       other Python project does this for marginal coverage gains.
+        #     Cost: wheel only installs on macOS 14+ (Sonoma, Sept 2023+).
+        #     Older users can build from sdist or wait until source-built
+        #     deps land.
+        #   * CC/CXX -> Homebrew LLVM clang for C++23 features (static_assert
+        #     in templates, lambda capture of structured bindings, ranges::join)
+        #     that AppleClang 15 lacks.
+        #   * LIBRARY_PATH adds the keg-only icu4c@78 lib dir to the linker
+        #     search path so bare -licudata / -licuuc / -licui18n flags pulled
+        #     in transitively by Boost can be resolved.
+        CIBW_ENVIRONMENT_MACOS: >-
+          MACOSX_DEPLOYMENT_TARGET=14.0
+          CC=/opt/homebrew/opt/llvm/bin/clang
+          CXX=/opt/homebrew/opt/llvm/bin/clang++
+          LIBRARY_PATH=/opt/homebrew/opt/icu4c@78/lib
+
+        CIBW_BEFORE_ALL_MACOS: bash tools/wheels/before_all_macos.sh
+
+        # Smoke-test the installed wheel. The wrapper script runs the
+        # one-liner test first; on failure it dumps wheel layout, ldd
+        # output, LD_DEBUG=files, and a gdb backtrace so we can root-
+        # cause crashes (linux wheels have been segfaulting at import
+        # with no diagnostic output).
+        CIBW_TEST_COMMAND: bash {project}/tools/wheels/test_wheel.sh
+
+    - uses: actions/upload-artifact@v6
+      with:
+        name: wheels-${{ matrix.os }}-${{ matrix.py }}
+        path: wheelhouse/*.whl
+        if-no-files-found: error
+
+  linux-sdk:
+    name: linux-sdk
+    runs-on: 16-core-ubuntu
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 1
+
+    - name: Build SDK artifacts inside manylinux_2_28
+      run: |
+        docker run --rm \
+          -v "$PWD:/project" \
+          -w /project \
+          quay.io/pypa/manylinux_2_28_x86_64 \
+          bash tools/wheels/build_linux_sdk.sh
+
+    - name: Restore executable permissions
+      # EXAMPLES=ON only applies when building with tests (cmake.defines.test=on
+      # in the rebalancer manifest). The SDK build uses --no-tests so no .exe
+      # binaries are produced; the glob is a no-op here.
+      run: chmod +x _artifacts/linux/bin/*.exe 2>/dev/null || true
+
+    - uses: actions/upload-artifact@v6
+      with:
+        name: rebalancer-linux-sdk
+        path: _artifacts/linux
+        if-no-files-found: error

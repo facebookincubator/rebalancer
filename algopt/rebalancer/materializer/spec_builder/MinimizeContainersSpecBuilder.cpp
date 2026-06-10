@@ -1,0 +1,298 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "algopt/rebalancer/materializer/spec_builder/MinimizeContainersSpecBuilder.h"
+
+#include "algopt/rebalancer/materializer/utils/FilterWrapper.h"
+#include "algopt/rebalancer/solver/expressions/Operators.h"
+
+using namespace facebook::rebalancer::entities;
+
+namespace {
+struct DimensionValues {
+  double sum = 0;
+  std::optional<double> minPositive;
+};
+
+DimensionValues getObjectDimensionSumAndMinPositiveValue(
+    const ObjectDimension& objectDimension) {
+  auto throwMsg = [](const std::string& reason) {
+    throw std::runtime_error(
+        fmt::format(
+            "{} are not supported when using MinimizeContainerSpec with NEW formula",
+            reason));
+  };
+  if (objectDimension.hasNegativeValues()) {
+    throwMsg("Negative dimension values");
+  }
+
+  if (objectDimension.isDynamic() || objectDimension.size() != 1) {
+    throwMsg("Non-scalar or dynamic dimensions");
+  }
+
+  const auto& objectScalarDimension = objectDimension.at(0);
+  return {
+      .sum = objectScalarDimension.values().sum(),
+      .minPositive = objectScalarDimension.getMinimumPositiveValue()};
+}
+
+} // namespace
+
+namespace facebook::rebalancer::materializer {
+
+MinimizeContainersSpecBuilder::MinimizeContainersSpecBuilder(
+    std::shared_ptr<const Universe> universe,
+    interface::MinimizeContainersSpec spec,
+    bool continuousExpressions)
+    : SpecBuilder(std::move(universe)),
+      spec_(std::move(spec)),
+      continuousExpressions_(continuousExpressions),
+      scopeId_(
+          !spec_.scope()->empty()
+              ? universe_->getScopeId(*spec_.scope())
+              : universe_->getScopeId(universe_->getContainerTypeName())),
+      dimensionId_(
+          !spec_.dimension()->empty()
+              ? universe_->getDimensionId(*spec_.dimension())
+              : universe_->getDimensionId(
+                    fmt::format("{}_count", universe_->getObjectTypeName()))),
+      objectDimension_(universe_->getObjects().getDimension(dimensionId_)),
+      containerCosts_(*spec_.containerCosts()) {}
+
+folly::coro::Task<ExprPtr>
+MinimizeContainersSpecBuilder::getMinimizeContainersContinuousFormulaExpr(
+    ExpressionBuilder& expressionBuilder) const {
+  const ScopeItemFilterWrapper filter(*universe_, *spec_.filter(), scopeId_);
+  const auto& filteredScopeItemIds = filter.getScopeItemIds();
+  auto maxFreeLimit = spec_.maxFreeLimit()
+      ? std::min(*spec_.maxFreeLimit(), int(filteredScopeItemIds.size()))
+      : filteredScopeItemIds.size();
+
+  auto [objectDimensionSum, minPositiveDimensionValue] =
+      getObjectDimensionSumAndMinPositiveValue(objectDimension_);
+  if (universe_->getPrecision().compare(objectDimensionSum, 0) == 0) {
+    co_return const_expr(0, universe_);
+  }
+  /*
+    objective funtion: minimize the following, where afterUtil() is a single
+  lookup over all containers that are to be freed.
+
+    objective = (expr1 - expr2) * expr3, where
+    expr1 = coeff1 * afterUtil(scopeItemsToFree)
+
+    expr2 = coeff2 * sum_{c \in scopeItemsToFree} (absoluteUtil(c))^1.1)
+
+    expr3 = step(maxFreeLimit - scopeItemsToFree)
+
+    coeff1 = 2 / minPositiveDimensionValue_or_1
+
+    coeff2 = 0.5 / (objectDimensionSum)^1.1
+
+  NOTE:
+  a) 0 <= 2 / minPositiveDimensionValue_or_1 <= 2 for
+  minPositiveDimensionValue_or_1 >= 1
+
+  b) 0 <= 0.5/(objectDimensionSum^1.1 <= 0.5
+  when objectDimensionSum >= 1
+
+  c) afterUtil(scopeItemsToFree) >= 1 as long
+  there is at least one object in scopeItemToFree, and it decreases by at least
+  2 any time an object with non-zero dimension value moves from a scopeItem in
+  scopeItemsToFree to a scopeItem outside scopeItemsToFree. Therefore, there is
+  always an incentive to move an object with non-zero dimension value out.
+
+  d)  - coeff2 * sum_{c \in scopeItemsToFree}
+  (absoluteUtil(c))^1.1) will always incitivize moving objects from smaller
+  containers to bigger containers when absoluteUtil(c) are >= 1
+
+  e) expr3's value indicates whether the the number of freed scopeItems is below
+  maxFreeLimit.
+
+  f) This objective function assumes that local search is implemented in a
+  certain way. In particular,
+    (i) in the object_lookup expression that computes
+    afterUtil(scopeItemsToFree), all the underlying containers are considered to
+  be equally "hot"
+
+    (ii) In the objective expression expr1 - expr2, expr1 has higher potential
+    than expr2, because expr2's potential is at most 1, whereas expr1's
+  potential is at least (2 - 0.5 = 1.5) (potential here is distance from lower
+  bound; see Expression.cpp)
+
+    (iii) as a result of (i) and (ii), the hottest container c will the one that
+    has absoluteUtil(c) closest to zero; this is because -(absoluteUtil(c))^1.1)
+    expression associated with such a container c will have the largest
+  potential
+  */
+
+  ExprPtr occupiedScopeItemsCount = const_expr(0, universe_);
+  ExprPtr sumOverUtilSquared = const_expr(0, universe_);
+  for (auto& scopeItemId : filteredScopeItemIds) {
+    const double cost = folly::get_default(
+        containerCosts_, universe_->getEntityName(scopeItemId), 1.0);
+    auto absoluteUtil = co_await expressionBuilder.getAbsoluteUtil(
+        UtilMetric::AFTER, dimensionId_, scopeId_, scopeItemId);
+
+    inplace_add(
+        sumOverUtilSquared,
+        (1 / cost) * power(absoluteUtil, 1.1, universe_),
+        universe_);
+
+    // if absoluteUtil > 0 then step(absoluteUtil) = 1
+    // else step(absoluteUtil) = 0
+    inplace_add(
+        occupiedScopeItemsCount, step(absoluteUtil, universe_), universe_);
+  }
+
+  // create a single lookup expr over all scopeItemIdsToFree
+  const ExprPtr totalAfterUtil = co_await expressionBuilder.getAbsoluteUtil(
+      UtilMetric::AFTER, dimensionId_, scopeId_, filteredScopeItemIds);
+  const double coeff1 = 2 / minPositiveDimensionValue.value();
+  const double coeff2 = 0.5 / pow(objectDimensionSum, 1.1);
+
+  auto freeScopeItemsCount =
+      filteredScopeItemIds.size() - occupiedScopeItemsCount;
+  auto isAboveMaxFreeLimit =
+      step(maxFreeLimit - freeScopeItemsCount, universe_) /
+      (2 * filteredScopeItemIds.size());
+
+  // this formula will continue until the number of free scopeItems is equal
+  // to maxFreeLimit or until all objects are in 1 scopeItem
+  co_return product(
+      coeff1 * totalAfterUtil - coeff2 * sumOverUtilSquared,
+      isAboveMaxFreeLimit,
+      universe_);
+}
+
+folly::coro::Task<ExprPtr> MinimizeContainersSpecBuilder::getObjectiveExpr(
+    ExpressionBuilder& expressionBuilder) const {
+  if (!continuousExpressions_) {
+    co_return co_await getMinimizeContainersDiscreteFormulaExpr(
+        expressionBuilder);
+  } else {
+    switch (*spec_.formula()) {
+      case interface::MinimizeContainerSpecFormula::LEGACY:
+        co_return co_await getMinimizeContainerLegacyFormulaExpr(
+            expressionBuilder);
+      case interface::MinimizeContainerSpecFormula::NEW:
+        co_return co_await getMinimizeContainersContinuousFormulaExpr(
+            expressionBuilder);
+    }
+  }
+}
+
+folly::coro::Task<ExprPtr>
+MinimizeContainersSpecBuilder::getMinimizeContainersDiscreteFormulaExpr(
+    ExpressionBuilder& expressionBuilder) const {
+  const ScopeItemFilterWrapper filter(*universe_, *spec_.filter(), scopeId_);
+  const auto& filteredScopeItemIds = filter.getScopeItemIds();
+  auto maxFreeLimit = spec_.maxFreeLimit()
+      ? std::min(*spec_.maxFreeLimit(), int(filteredScopeItemIds.size()))
+      : filteredScopeItemIds.size();
+
+  auto result = const_expr(0, universe_);
+  for (auto scopeItemId : filteredScopeItemIds) {
+    // Each container may have some cost depending on usecase
+    // and we minimize total sum of the cost of containers being used
+    const double containerCost = folly::get_default(
+        containerCosts_, universe_->getEntityName(scopeItemId), 1.0);
+    auto hasObject = step(
+        co_await expressionBuilder.getRelativeUtil(
+            UtilMetric::AFTER, dimensionId_, scopeId_, scopeItemId),
+        universe_);
+    result += hasObject * containerCost;
+  }
+
+  co_return max(
+      {const_expr(0, universe_),
+       result - filteredScopeItemIds.size() + maxFreeLimit},
+      universe_);
+}
+
+folly::coro::Task<ExprPtr>
+MinimizeContainersSpecBuilder::getMinimizeContainerLegacyFormulaExpr(
+    ExpressionBuilder& expressionBuilder) const {
+  const ScopeItemFilterWrapper filter(*universe_, *spec_.filter(), scopeId_);
+  const auto& filteredScopeItemIds = filter.getScopeItemIds();
+  auto maxFreeLimit = spec_.maxFreeLimit()
+      ? std::min(*spec_.maxFreeLimit(), int(filteredScopeItemIds.size()))
+      : filteredScopeItemIds.size();
+
+  if (continuousExpressions_ && maxFreeLimit != filteredScopeItemIds.size()) {
+    throw std::runtime_error(
+        "Custom max free limit not supported in minimize "
+        "containers goal in LEGACY formula but is supported in NEW formula");
+  }
+
+  double dimensionSum = 1;
+  const Context context;
+  for (auto scopeItemId : filteredScopeItemIds) {
+    auto sum = co_await expressionBuilder.getRelativeUtil(
+        UtilMetric::AFTER, dimensionId_, scopeId_, scopeItemId);
+    dimensionSum += expressionBuilder.getInitialValue(*sum);
+  }
+
+  auto result = const_expr(0, universe_);
+  for (auto scopeItemId : filteredScopeItemIds) {
+    // Each container may have some cost depending on usecase
+    // and we minimize total sum of the cost of containers being used
+
+    const double containerCost = folly::get_default(
+        containerCosts_, universe_->getEntityName(scopeItemId), 1.0);
+    const double coeff = 1.0 / containerCost;
+    auto expr = coeff *
+        power(co_await expressionBuilder.getRelativeUtil(
+                  UtilMetric::AFTER, dimensionId_, scopeId_, scopeItemId),
+              1.25,
+              universe_);
+    result += expr;
+  }
+
+  co_return (-1 * result) / dimensionSum;
+}
+
+folly::coro::Task<ExprPtr> MinimizeContainersSpecBuilder::goalCoro(
+    ExpressionBuilder& expressionBuilder) const {
+  co_return co_await getObjectiveExpr(expressionBuilder);
+}
+
+folly::coro::Task<std::vector<ConstraintInfo>>
+MinimizeContainersSpecBuilder::constraints(
+    ExpressionBuilder& /* expressionBuilder */) const {
+  throw std::runtime_error(
+      "MinimizeContainersSpec not supported as a constraint");
+}
+
+std::string MinimizeContainersSpecBuilder::description() const {
+  return fmt::format(
+      "For {}, minimize used {}s, formula={}",
+      *spec_.dimension(),
+      *spec_.scope(),
+      apache::thrift::util::enumNameSafe(*spec_.formula()));
+}
+
+SpecParameters MinimizeContainersSpecBuilder::getSpecInfo() const {
+  return SpecParameters{
+      .name = *spec_.name(),
+      .scope = *spec_.scope(),
+      .dimension = *spec_.dimension(),
+      .filterAllowListSize = spec_.filter()->itemsWhitelist()
+          ? static_cast<int>(spec_.filter()->itemsWhitelist()->size())
+          : 0,
+      .filterBlockListSize = spec_.filter()->itemsBlacklist()
+          ? static_cast<int>(spec_.filter()->itemsBlacklist()->size())
+          : 0};
+}
+
+} // namespace facebook::rebalancer::materializer

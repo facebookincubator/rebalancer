@@ -1,0 +1,124 @@
+# Rebalancer
+
+<img src="logo.svg" alt="Rebalancer Logo" width="300">
+
+Rebalancer is an assignment solver library that provides a generic and intuitive API for defining any assignment problem and the ability to optimize the assignment given a variety of implemented algorithms.
+
+An assignment problem is any problem that can be defined as a decision of how to assign objects to containers, such that each object is assigned to exactly one container, given that it satisfies a set of constraints/rules and optimizes a set of objectives/goals.
+
+The core solver is written in C++ and runs in a single process with multi-threaded parallelism. Currently, it can handle problems with ~1M objects and containers reasonably well. It's easily extensible to support new solving algorithms and expressions. Independent of the problem definition the user can choose from multiple solving algorithms. The most common are:
+* **Local search** starts with an arbitrary assignment, and keeps performing simple moves (such as moving an object to a different container, swapping two objects, etc.) that are valid and improve the objective, until it can't find new improvements (or hits a user-defined moves limit or time limit). This solver is not guaranteed to find a global optimal solution, but it scales very well and can handle big problems.
+* **Optimal solver (mixed-integer programming)** represents the problem as a set of mixed-integer programming expressions, and solves it using a generic external library (Rebalancer currently supports two commercial solvers, [FICO Xpress](https://www.fico.com/en/products/fico-xpress-optimization) and [Gurobi](https://www.gurobi.com/) as well as the open source solver [HiGHS](https://highs.dev/)). These solvers will find optimal solutions given enough time, but they don't scale to handle huge problems well.
+
+There is a finite (but easily extensible) set of predefined expressions that can be used to represent goals and constraints. A few examples of popular ones:
+* **Balance**: make a given dimension balanced across containers. For example, say the objects are shards and containers are hosts, each shard has a given CPU utilization, and it is desired to distribute shards across hosts in a way that overall CPU utilization of all hosts is as similar as possible.
+* **Capacity**: limit a dimension within containers. For example, say each shard (object) has a memory requirement (dimension), each host (container) has a memory capacity (dimension), and it is required that the sum of memory required by all shards in a host doesn't exceed the memory capacity of the host.
+
+Users interact with Rebalancer via an interface which is available in C++ and Python.
+
+## Installation
+
+### Ubuntu
+
+```bash
+# Prereqs
+sudo apt install git pip python3-pex libfast-float-dev libgoogle-glog-dev clang-19 clang-tools-19 clang-format-19
+
+# Build Thrift and Folly from source
+git clone https://github.com/facebook/fbthrift.git
+cd fbthrift/
+./build/fbcode_builder/getdeps.py install-system-deps --recursive fbthrift
+pip3 install pex --user
+./build/fbcode_builder/getdeps.py --scratch-path ./installed --allow-system-packages build fbthrift
+cd ..
+
+# Clone and build Rebalancer
+git clone git@github.com:facebookincubator/rebalancer.git
+cd rebalancer/
+mkdir build && cd build
+cmake -GNinja \
+  -DCMAKE_COLOR_DIAGNOSTICS=ON \
+  -DCMAKE_PREFIX_PATH="$HOME/fbthrift/installed/installed/folly/lib/cmake/folly;$HOME/fbthrift/installed/installed/fbthrift/lib/cmake/fbthrift;$HOME/fbthrift/installed/installed/fmt/lib/cmake/fmt" \
+  -DCMAKE_MODULE_PATH="$HOME/fbthrift/build/fbcode_builder/CMake" \
+  -DCMAKE_BUILD_TYPE=Debug ..
+ninja
+```
+
+#### HiGHS (open source MIP solver)
+
+Pick one of the following:
+
+```bash
+# Option 1: Install via conda
+conda install conda-forge::highs
+
+# Option 2: Install via pip
+pip install highspy
+
+# Option 3: Build from source
+git clone https://github.com/ERGO-Code/HiGHS.git
+cd HiGHS && mkdir build && cd build
+cmake -GNinja .. && ninja
+```
+
+### macOS
+
+```bash
+# Prereqs
+brew install cmake ninja boost fmt folly googletest fbthrift
+
+# Clone and build Rebalancer
+git clone git@github.com:facebookincubator/rebalancer.git
+cd rebalancer/
+mkdir build && cd build
+cmake -GNinja \
+  -DCMAKE_COLOR_DIAGNOSTICS=ON \
+  -DCMAKE_PREFIX_PATH="/opt/homebrew/lib/cmake/folly;/opt/homebrew/lib/cmake/fbthrift;/opt/homebrew/lib/cmake/fmt" \
+  -DCMAKE_BUILD_TYPE=Debug ..
+ninja
+```
+
+### Fedora
+
+```bash
+sudo dnf install boost-devel.x86_64 fbthrift-devel.x86_64 glog-devel.x86_64 gtest-devel.x86_64 gmock-devel.x86_64 fmt-devel.x86_64
+```
+
+## Development Setup
+
+### Pre-commit hooks
+
+This project uses [pre-commit](https://pre-commit.com/) to run `clang-format` automatically before each commit.
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+To manually check all files:
+
+```bash
+pre-commit run --all-files
+```
+
+## Notes on Contributing
+
+A complexity of contributing to rebalancer is that it must compile both on Meta's build infrastructure as well as in the open source world. This dual requirement has led to a somewhat strange CMake design where CMake searches the entire directory tree for files it can build and then classifies them as library files, tests, benchmarks, or other executables. Anything that isn't a test, benchmark, or executable is bundled into the Rebalancer library which is linked against the executables. This means that if you _add_ files to the project, you'll need to re-run CMake manually to ensure that it detects these files and bundles them.
+
+## Document/website development
+
+* Development
+  * Enter the [website/](website/) directory.
+  * Run `yarn` to install all the various things you'll want and need.
+  * Run `npm build` to build the site.
+  * Run `npm run start` to start a development server to preview the site.
+* Deployment
+  * If you push a branch or make a pull request containing changes to the [website/](website/) directory or [docs.yml](.github/workflows/docs.yml) that will launch a GitHub Action to rebuild the docs.
+  * The deployment step will only step will only be run if the base branch is `main` or `docs`. This branches can only be committed to by members of the core development team.
+* View the website at: https://facebookincubator.github.io/rebalancer/
+
+
+## License
+
+Rebalancer is licensed under the Apache 2.0 License. A copy of the license
+[can be found here.](LICENSE)

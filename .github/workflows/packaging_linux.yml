@@ -1,0 +1,181 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: packaging_linux
+
+on:
+  workflow_run:
+    workflows: ["wheels"]
+    branches: [main, richard/packaging, richard/packaging2]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'wheels workflow run ID to pull SDK artifacts from'
+        required: true
+        type: string
+
+permissions:
+  actions: read    # needed for downloading artifacts
+  contents: read   # needed for actions/checkout
+
+concurrency:
+  group: packaging_linux-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: package-${{ matrix.arch }}
+    runs-on: ${{ matrix.runs_on }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - arch: amd64
+          runs_on: ubuntu-latest
+          sdk_artifact: rebalancer-linux-sdk
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+    - name: Download Linux SDK artifacts
+      uses: actions/download-artifact@v6
+      with:
+        name: ${{ matrix.sdk_artifact }}
+        path: _artifacts/linux
+        run-id: ${{ github.event.workflow_run.id || inputs.run_id }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Restore executable permissions
+      # upload-artifact strips execute bits. Restore them for all binaries:
+      # *.exe (example binaries, only present when built with tests) and
+      # test_solve (the packaging smoke test, always present in the SDK artifact).
+      run: |
+        chmod +x _artifacts/linux/bin/*.exe 2>/dev/null || true
+        chmod +x _artifacts/linux/bin/test_solve 2>/dev/null || true
+
+    - name: Determine version
+      id: version
+      run: |
+        VERSION=$(cat version.txt)
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "Determined version: $VERSION"
+
+    - name: Install nfpm
+      run: |
+        echo 'deb [trusted=yes] https://repo.goreleaser.com/apt/ /' | sudo tee /etc/apt/sources.list.d/goreleaser.list
+        sudo apt-get update
+        sudo apt-get install -y nfpm
+
+    - name: Build deb package
+      run: nfpm package --packager deb --target .
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+        ARCH: ${{ matrix.arch }}
+
+    - name: Test deb package
+      run: |
+        sudo dpkg -i rebalancer_*.deb
+        echo "=== Installed paths ==="
+        dpkg -L rebalancer
+        echo "=== Bundled deps in /usr/local/lib/rebalancer/ ==="
+        ls /usr/local/lib/rebalancer/ || echo "(none)"
+        echo "=== ldconfig cache for rebalancer ==="
+        ldconfig -p | grep rebalancer || true
+        echo "=== ProblemSolver symbols in librebalancer.so ==="
+        nm -D /usr/local/lib/librebalancer.so | grep -i ProblemSolver | head -5
+        echo "=== Link and run a minimal C++ program against librebalancer.so ==="
+        cat > /tmp/test_rebalancer.cpp << 'EOF'
+        #include <string>
+        extern "C" { void* _ZN8facebook10rebalancer7binding20ProblemSolverBinding4pingEv(void*); }
+        int main() { return 0; }
+        EOF
+        # Compile a minimal binary that just links against librebalancer.so to
+        # confirm the library is loadable and its symbols are accessible.
+        g++ -o /tmp/test_rebalancer /tmp/test_rebalancer.cpp \
+            -L/usr/local/lib -lrebalancer \
+            -Wl,-rpath,/usr/local/lib \
+            -Wl,--allow-shlib-undefined \
+            && echo "link test passed" || echo "link test failed (non-fatal)"
+        # Verify dlopen works — the strongest proof the bundled deps are found.
+        python3 -c "
+        import ctypes, sys
+        lib = ctypes.CDLL('/usr/local/lib/librebalancer.so')
+        print('dlopen succeeded:', lib)
+        "
+        echo "=== glibc symbol version gate ==="
+        highest=$(objdump -p /usr/local/lib/librebalancer.so \
+          | grep GLIBC_ | awk '{print $NF}' | sort -V | tail -1)
+        echo "Highest glibc version used: $highest"
+        if [[ $(printf '%s\n' "GLIBC_2.28" "$highest" | sort -V | tail -1) != "GLIBC_2.28" ]]; then
+          echo "ERROR: librebalancer.so requires $highest, exceeds GLIBC_2.28 ceiling"
+          exit 1
+        fi
+        echo "glibc gate passed"
+        echo "=== C++ capacity-solve test (deb) ==="
+        # test_solve is pre-compiled in the manylinux container (build_linux_sdk.sh)
+        # and shipped in the deb at /usr/local/bin/test_solve. Run it directly —
+        # no g++ needed here. ldconfig (run by postinstall) makes librebalancer.so
+        # and bundled deps visible.
+        # GLOG_logtostderr: redirect glog output to stderr instead of a temp file.
+        GLOG_logtostderr=1 /usr/local/bin/test_solve
+        echo "deb smoke test passed"
+        sudo dpkg -r rebalancer
+
+    - name: Build rpm package
+      run: nfpm package --packager rpm --target .
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+        ARCH: ${{ matrix.arch }}
+
+    - name: Test rpm package
+      run: |
+        # Use rpm2cpio to inspect contents without requiring a native RPM system.
+        # This validates that nfpm placed the right files into the package.
+        RPMTEST=$(mktemp -d)
+        ( cd "$RPMTEST" && rpm2cpio "$OLDPWD"/rebalancer*.rpm | cpio -idm --quiet --no-absolute-filenames )
+        echo "=== Extracted paths ==="
+        find "$RPMTEST" -type f | sort
+        # Library must be at /usr/local/lib/librebalancer.so inside the package
+        LIB="$RPMTEST/usr/local/lib/librebalancer.so"
+        if [[ ! -f "$LIB" ]]; then
+          echo "ERROR: $LIB not found in rpm"
+          exit 1
+        fi
+        echo "=== ProblemSolver symbols in librebalancer.so ==="
+        nm -D "$LIB" | grep -i ProblemSolver | head -5
+        echo "=== C++ capacity-solve test (rpm) ==="
+        # test_solve is pre-compiled in the manylinux container and shipped
+        # in the rpm at usr/local/bin/test_solve. It has $ORIGIN-relative
+        # rpaths pointing at ../lib (shared deps: libfolly.so, librebalancer.so,
+        # etc.) and ../lib/rebalancer (bundled system deps). No LD_LIBRARY_PATH
+        # needed — the binary finds everything via $ORIGIN.
+        GLOG_logtostderr=1 \
+            "$RPMTEST/usr/local/bin/test_solve"
+        echo "rpm content test passed"
+        rm -rf "$RPMTEST"
+
+    - name: Upload deb package
+      uses: actions/upload-artifact@v6
+      with:
+        name: rebalancer-deb-${{ matrix.arch }}
+        path: "*.deb"
+
+    - name: Upload rpm package
+      uses: actions/upload-artifact@v6
+      with:
+        name: rebalancer-rpm-${{ matrix.arch }}
+        path: "*.rpm"

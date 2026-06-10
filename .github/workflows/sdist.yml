@@ -1,0 +1,55 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: sdist
+
+on:
+  push:
+    branches: [main, richard/packaging]
+    tags: ['v*']
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+    - 'pyproject.toml'
+    - 'src/rebalancer/**'
+    - 'CMakeLists.txt'
+    - 'version.txt'
+    - '.github/workflows/sdist.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdist-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 1
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+    - name: Build sdist
+      run: pipx run build --sdist
+    - uses: actions/upload-artifact@v6
+      with:
+        name: sdist
+        path: dist/*.tar.gz
+        if-no-files-found: error

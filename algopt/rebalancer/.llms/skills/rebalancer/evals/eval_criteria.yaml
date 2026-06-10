@@ -1,0 +1,1169 @@
+default_working_directory: "~/fbsource"
+
+test_cases:
+  # ============================================================
+  # INVOCATION (6 tests, ~24%)
+  # ============================================================
+
+  - id: TC-001
+    name: "Natural language: why was shard not moved"
+    category: invocation
+    prompt: "For run _spm_generated_.galileo.ncg.flash.regional.1_regional_1773705373076, I want to understand why shard 24764:0,2476400263-0,2476400263:1 was not moved to server -488245692. Can you investigate?"
+    description: "Tests whether the skill triggers from a natural 'why wasn't this moved' question and activates Recipe 1"
+    expected_behavior: "Should recognize this as a blocked-move debugging question, build the CLI tools, and run eval_move with the correct run-id, variable, and container"
+    eval_target: tool_usage
+    mock_data: |
+      buck build outputs:
+        eval_move: /tmp/mock_eval_move.par
+        list_server_moves: /tmp/mock_list_server_moves.par
+        query_mip: /tmp/mock_query_mip.par
+
+      eval_move --run-id "_spm_generated_.galileo.ncg.flash.regional.1_regional_1773705373076" --variable "24764:0,2476400263-0,2476400263:1" --container "-488245692":
+        verdict: BLOCKED_BY_CONSTRAINT
+        objectives:
+          - name: per_server_max_move_, direction: regressed, baseline: 0.0, override: 1.0, delta: 1.0, tuple_index: 0
+        constraints (BROKEN only):
+          - name: BALANCE_LOADlower_bound_region_gbl_flash_storage, status: BROKEN, baseline: 0.0, override: 6.9e-05, delta: 6.9e-05
+        constraints (STILL_BROKEN, sample):
+          - name: non_accepting_containers, baseline: 22700.0, delta: 0.0
+          - name: per_server_max_move_, baseline: 21000.0, delta: 0.0
+        specs:
+          per_server_max_move_:
+            type: both constraint and objective
+            objective: tuple_index=0, weight=1.0
+            constraint: CapacitySpec, definition=MOVED_DATA(8), bound=MAX(1), scope=__server__, dimension=__shard___count__
+            scopeItemLimits: {"-488245692": 20, "1322705960": 19}
+
+      list_server_moves --shard "24764:0,2476400263-0,2476400263:1":
+        src.__server__: "1322705960"
+        dst.__server__: "1322705960" (not moved by solver)
+
+      list_server_moves --server "1322705960":
+        moves_from_server: 18, moves_to_server: 0, total: 18
+
+      list_server_moves --server "-488245692":
+        moves_from_server: 0, moves_to_server: 1, total: 1
+
+      query_mip --server "1322705960":
+        shards_with_move_in_progress_from_server: 1 (shard: 13927:0,1392700560-0,1392700560:0)
+        shards_with_move_in_progress_to_server: 0
+
+      query_mip --server "-488245692":
+        shards_with_move_in_progress_from_server: 0
+        shards_with_move_in_progress_to_server: 0
+
+      compute-moved-data "1322705960" --proposed-shard "24764:0,2476400263-0,2476400263:1":
+        total_moved_data: 18.0, total_with_proposed: 19.0
+
+      compute-moved-data "-488245692" --proposed-shard "24764:0,2476400263-0,2476400263:1":
+        total_moved_data: 1.0, total_with_proposed: 2.0
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "list_server_moves"
+      - "query_mip"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["eval_move", "per_server_max_move_", "BLOCKED_BY_CONSTRAINT", "1322705960"]
+      required_absent: ["I cannot", "I don't know how"]
+      semantic_checks:
+        - question: "Did the agent correctly identify this as a Recipe 1 (blocked move) scenario and run eval_move?"
+          weight: 3
+          rubric:
+            5: "Immediately recognized as blocked-move debugging, built tools, ran eval_move with correct arguments"
+            4: "Recognized correctly with minor delay or extra confirmation"
+            3: "Recognized but required re-prompting to get the right tool"
+            2: "Partially recognized but used wrong tool or arguments"
+            1: "Did not recognize as a debugging scenario at all"
+        - question: "Did the agent follow the correct analysis priority (objectives first, then constraints)?"
+          weight: 2
+          rubric:
+            5: "Checked objectives first, identified per_server_max_move_ tuple_index=0 as primary blocker"
+            4: "Checked objectives but didn't emphasize priority"
+            3: "Mentioned objectives but checked constraints first"
+            2: "Only focused on constraints, mentioned objectives as afterthought"
+            1: "Ignored objectives entirely"
+      artifact_checks: []
+
+  - id: TC-002
+    name: "Natural language: per_server_max_move blocking"
+    category: invocation
+    prompt: "I keep hitting the per server move limit when trying to move shards. Run ID is test_run_123. What's going on with server -999888777?"
+    description: "Tests whether skill triggers from a per_server_max_move complaint and activates Recipe 2"
+    expected_behavior: "Should recognize as per_server_max_move debugging, run companion tools to get full MOVED_DATA accounting"
+    eval_target: tool_usage
+    mock_data: |
+      buck build outputs: /tmp/mock_eval_move.par, /tmp/mock_lsm.par, /tmp/mock_qm.par
+
+      list_server_moves --server "-999888777":
+        moves_from: 15, moves_to: 3, total: 18
+
+      query_mip --server "-999888777":
+        MIP from server: 2 shards, MIP to server: 1 shard
+
+      The server -999888777 has scopeItemLimit of 20 for per_server_max_move_.
+      Total MOVED_DATA = 18 (solver) + 3 (MIP) = 21, exceeding limit of 20.
+    intercept_patterns:
+      - "buck build"
+      - "list_server_moves"
+      - "query_mip"
+      - "--run-id"
+      - "--compute-moved-data"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["per_server_max_move_", "MOVED_DATA", "list_server_moves", "query_mip"]
+      required_absent: ["I cannot"]
+      semantic_checks:
+        - question: "Did the agent investigate both solver moves AND moves in progress?"
+          weight: 3
+          rubric:
+            5: "Ran list_server_moves AND query_mip, combined both into total MOVED_DATA"
+            4: "Ran both tools but presentation was incomplete"
+            3: "Ran one tool, mentioned the other"
+            2: "Only ran list_server_moves, ignored moves in progress"
+            1: "Did not investigate MOVED_DATA at all"
+        - question: "Did the agent present a complete accounting table?"
+          weight: 2
+          rubric:
+            5: "Presented table with solver moves, MIP, subtotal, proposed, total, limit, and over/under"
+            4: "Presented most components but missing one"
+            3: "Showed numbers but no structured table"
+            2: "Showed partial numbers without clear accounting"
+            1: "No accounting presented"
+      artifact_checks: []
+
+  - id: TC-003
+    name: "Natural language: SAFE move not made"
+    category: invocation
+    prompt: "I evaluated a move in Explorer and it looks safe but the solver didn't make it. The run is test_safe_run_456, shard 50000:0,5000000001-0,5000000001:0 to server -111222333. Why wasn't it made?"
+    description: "Tests whether skill triggers Recipe 4 for SAFE-but-not-made scenario"
+    expected_behavior: "Should run eval_move with default base (INITIAL→FINAL), detect SAFE verdict, then automatically run FINAL→FINAL to check marginal impact"
+    eval_target: tool_usage
+    mock_data: |
+      eval_move (default INITIAL→FINAL):
+        verdict: SAFE
+        constraints: many STILL_BROKEN with large negative deltas (improvements)
+        objectives: none regressed
+
+      eval_move (--src-base FINAL --dst-base FINAL):
+        verdict: SAFE
+        constraints: some with small negative deltas (e.g., -0.067)
+        objectives: 0 objectives (all hidden by 1e-9 display threshold)
+
+      This is a precision truncation case. FINAL→FINAL shows 0 objectives but constraint improvements,
+      suggesting sub-1e-9 objective improvements are hidden by eval_move's display threshold.
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "--run-id"
+      - "--src-base"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["SAFE", "FINAL", "precision", "1e-9"]
+      required_absent: ["I cannot"]
+      semantic_checks:
+        - question: "Did the agent run BOTH INITIAL→FINAL and FINAL→FINAL comparisons?"
+          weight: 3
+          rubric:
+            5: "Ran default eval_move first, detected SAFE, then automatically ran with --src-base FINAL --dst-base FINAL"
+            4: "Ran both but needed prompting for the second"
+            3: "Mentioned needing FINAL→FINAL but didn't execute it"
+            2: "Only ran default comparison"
+            1: "Didn't recognize the need for a second comparison"
+        - question: "Did the agent identify precision truncation as the likely cause?"
+          weight: 3
+          rubric:
+            5: "Identified 0 objectives + constraint improvements = precision truncation pattern, recommended 1e-16 tolerance"
+            4: "Identified precision truncation but didn't compute required tolerance"
+            3: "Mentioned precision as a possibility among others"
+            2: "Vaguely mentioned the solver might not see the improvement"
+            1: "Did not identify precision truncation at all"
+      artifact_checks: []
+
+  - id: TC-004
+    name: "Natural language: unexpected solver move"
+    category: invocation
+    prompt: "The solver moved shard 99999:0,9999900001-0,9999900001:0 from server A to server B in run test_unexpected_789 and I don't understand why. Can you help me figure out why it was moved?"
+    description: "Tests whether skill triggers Recipe 7 for unexpected move investigation"
+    expected_behavior: "Should recognize as Recipe 7, suggest evaluating the reverse move to identify which objective improved"
+    eval_target: response
+    mock_data: |
+      eval_move for reverse move (shard back to original server A):
+        verdict: OBJECTIVE_REGRESSION
+        objectives:
+          - name: BALANCE_LOADlower_bound_region_gbl_flash_storage, direction: regressed, delta: 1e-7, tuple_index: 5
+        This shows that undoing the move would regress this objective, meaning the forward move
+        improved it by a tiny amount (1e-7). The solver accepted this tiny improvement.
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["reverse", "objective", "improved"]
+      required_absent: ["I cannot"]
+      semantic_checks:
+        - question: "Did the agent suggest evaluating the reverse move?"
+          weight: 3
+          rubric:
+            5: "Suggested evaluating the reverse move (undo) to find which objective regresses, indicating the original move's benefit"
+            4: "Suggested reverse move but didn't explain the reasoning clearly"
+            3: "Mentioned looking at objectives but didn't suggest the reverse approach"
+            2: "Tried to analyze the forward move only"
+            1: "Did not suggest any systematic approach"
+      artifact_checks: []
+
+  - id: TC-005
+    name: "Negative: should NOT trigger debugging"
+    category: invocation
+    prompt: "Can you help me write a new CapacitySpec constraint for the rebalancer? I want to limit the number of shards per rack to 100."
+    description: "Tests that the skill does NOT trigger for code-writing requests unrelated to debugging"
+    expected_behavior: "Should NOT activate the debugging workflow. Should respond about writing code, not about eval_move/list_server_moves"
+    eval_target: response
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: []
+      required_absent: ["eval_move", "list_server_moves", "query_mip", "--run-id", "Recipe"]
+      semantic_checks:
+        - question: "Did the agent correctly NOT trigger the debugging workflow?"
+          weight: 3
+          rubric:
+            5: "Responded about writing code/configuration, no debugging tools mentioned"
+            4: "Mostly responded about code but briefly mentioned debugging tools as context"
+            3: "Mixed response — part code writing, part debugging investigation"
+            2: "Tried to use debugging tools to answer a code-writing question"
+            1: "Fully activated debugging workflow for a code-writing request"
+      artifact_checks: []
+
+  - id: TC-006
+    name: "Ambiguous: missing run ID"
+    category: invocation
+    prompt: "Something's wrong with the rebalancer. Moves are being blocked and I don't know why."
+    description: "Tests handling of ambiguous request without required information (run ID)"
+    expected_behavior: "Should ask the user for a run ID before attempting to debug"
+    eval_target: response
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["run"]
+      required_absent: ["eval_move --run-id"]
+      semantic_checks:
+        - question: "Did the agent ask for the run ID before attempting to debug?"
+          weight: 3
+          rubric:
+            5: "Asked for run ID and optionally variable/container names before proceeding"
+            4: "Asked for run ID only"
+            3: "Mentioned needing a run ID but attempted generic debugging"
+            2: "Tried to proceed without a run ID"
+            1: "Didn't ask for any information, attempted to debug blindly"
+      artifact_checks: []
+
+  # ============================================================
+  # EFFICIENCY (3 tests, ~12%)
+  # ============================================================
+
+  - id: TC-007
+    name: "Tool build efficiency"
+    category: efficiency
+    prompt: "For run test_eff_001, why was shard 10000:0,1000000001-0,1000000001:0 not moved to server -555666777?"
+    description: "Tests that the agent builds all three tools in a single step (or parallel) rather than building each separately"
+    expected_behavior: "Should build EVAL, LSM, QM tools efficiently - ideally in one command block or parallel. Should redirect large eval_move output to a file."
+    eval_target: tool_usage
+    mock_data: |
+      buck build outputs: /tmp/mock_eval.par, /tmp/mock_lsm.par, /tmp/mock_qm.par
+
+      eval_move result:
+        verdict: BLOCKED_BY_CONSTRAINT
+        objectives: per_server_max_move_ regressed (tuple_index=0)
+        specs: CapacitySpec definition=MOVED_DATA, scopeItemLimits: {"-555666777": 20}
+
+      list_server_moves --shard "10000:0,1000000001-0,1000000001:0":
+        src.__server__: "222333444", dst.__server__: "222333444"
+
+      list_server_moves --server "222333444": moves_from=15, moves_to=0, total=15
+      list_server_moves --server "-555666777": moves_from=0, moves_to=2, total=2
+      query_mip --server "222333444": 3 MIP from, 0 MIP to
+      query_mip --server "-555666777": 0 MIP from, 0 MIP to
+      compute-moved-data "222333444" --proposed: total=15, with_proposed=16
+      compute-moved-data "-555666777" --proposed: total=2, with_proposed=3
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "list_server_moves"
+      - "query_mip"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["buck build"]
+      required_absent: []
+      semantic_checks:
+        - question: "Did the agent build tools efficiently (not rebuilding for each tool)?"
+          weight: 3
+          rubric:
+            5: "Built all tools in a single block or parallel commands, no redundant rebuilds"
+            4: "Built tools in 2 steps but no redundant rebuilds"
+            3: "Built tools separately but didn't rebuild any"
+            2: "Rebuilt some tools unnecessarily"
+            1: "Rebuilt every tool for every command invocation"
+        - question: "Did the agent redirect large output to a file for analysis?"
+          weight: 2
+          rubric:
+            5: "Redirected eval_move output to file, used grep/read_file to extract key info"
+            4: "Redirected output but read entire file instead of extracting"
+            3: "Didn't redirect but handled output reasonably"
+            2: "Output was lost/truncated due to not redirecting"
+            1: "Ignored the need for output management"
+      artifact_checks: []
+
+  - id: TC-008
+    name: "Parallel investigation of both servers"
+    category: efficiency
+    prompt: "Run test_eff_002, shard 20000:0,2000000001-0,2000000001:0 to server -777888999. Investigate."
+    description: "Tests whether the agent runs companion tool commands for source and destination servers in parallel"
+    expected_behavior: "After identifying source and dest servers, should run list_server_moves, query_mip, compute-moved-data for both servers in parallel where possible"
+    eval_target: tool_usage
+    mock_data: |
+      buck build outputs: /tmp/mock_eval.par, /tmp/mock_lsm.par, /tmp/mock_qm.par
+
+      eval_move result:
+        verdict: OBJECTIVE_REGRESSION
+        objectives: per_server_max_move_ regressed (tuple_index=0, delta=1.0)
+        specs: scopeItemLimits: {"-777888999": 20, "333444555": 18}
+
+      list_server_moves --shard: src=333444555, dst=333444555
+
+      For server "333444555": moves_from=17, moves_to=0, MIP_from=1, MIP_to=0
+      For server "-777888999": moves_from=0, moves_to=5, MIP_from=0, MIP_to=0
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "list_server_moves"
+      - "query_mip"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["333444555", "-777888999"]
+      required_absent: []
+      semantic_checks:
+        - question: "Did the agent investigate BOTH source and destination servers?"
+          weight: 3
+          rubric:
+            5: "Ran all companion tools for both servers, presented accounting for both"
+            4: "Investigated both but one was less thorough"
+            3: "Investigated both but missed some tools"
+            2: "Only fully investigated one server"
+            1: "Only investigated destination server, ignored source"
+        - question: "Were parallel tool calls used where possible?"
+          weight: 2
+          rubric:
+            5: "Used parallel execution for independent commands (e.g., both servers' queries at once)"
+            4: "Some parallelism but not maximized"
+            3: "Sequential but efficient"
+            2: "Sequential with unnecessary waits"
+            1: "Extremely sequential, one command at a time"
+      artifact_checks: []
+
+  - id: TC-009
+    name: "Concise output for simple case"
+    category: efficiency
+    prompt: "Run test_eff_003, why was shard 30000:0,3000000001-0,3000000001:0 not moved to server -111222333? Just give me the quick answer."
+    description: "Tests whether the agent can be concise when the answer is straightforward"
+    expected_behavior: "Should still run the full investigation but present results concisely when the blocking reason is clear"
+    eval_target: response
+    mock_data: |
+      eval_move result:
+        verdict: BLOCKED_BY_CONSTRAINT
+        constraints:
+          - name: non_accepting_containers, status: BROKEN, baseline: 0.0, override: 1.0, delta: 1.0
+        objectives: none regressed
+        Server -111222333 is in the non_accepting_containers list. This is a simple, clear-cut case.
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["non_accepting_containers", "BROKEN"]
+      required_absent: []
+      semantic_checks:
+        - question: "Was the answer appropriately concise for a simple blocking reason?"
+          weight: 3
+          rubric:
+            5: "Clear, direct answer: server is non-accepting, move blocked. No unnecessary deep dive"
+            4: "Concise but included some extra context"
+            3: "Correct answer but overly verbose for a simple case"
+            2: "Launched unnecessary companion tool investigations for a clear non_accepting case"
+            1: "Extremely verbose, buried the simple answer in pages of analysis"
+      artifact_checks: []
+
+  # ============================================================
+  # BEST PRACTICES (6 tests, ~24%)
+  # ============================================================
+
+  - id: TC-010
+    name: "Objectives-first analysis priority"
+    category: best_practices
+    prompt: "Run test_bp_001, why was shard 40000:0,4000000001-0,4000000001:0 not moved to -222333444? The verdict is BLOCKED_BY_CONSTRAINT with both broken constraints and regressed objectives."
+    description: "Tests that the agent follows the skill's analysis priority: objectives FIRST, then constraints"
+    expected_behavior: "Should check and report on objectives (especially tuple_index=0) BEFORE discussing broken constraints"
+    eval_target: response
+    mock_data: |
+      eval_move result:
+        verdict: BLOCKED_BY_CONSTRAINT
+        objectives:
+          - name: per_server_max_move_, direction: regressed, baseline: 0.0, override: 1.0, tuple_index: 0
+        constraints (BROKEN):
+          - BALANCE_LOADlower_bound_region_gbl_flash_storage, delta: 6.9e-05
+          - BALANCE_LOADlower_bound_region_gbl_ram_storage, delta: 5e-06
+          - BALANCE_LOADlower_bound_region_gbl_cpu, delta: 6.8e-05
+        constraints (STILL_BROKEN):
+          - non_accepting_containers, delta: 0.0
+          - per_server_max_move_ (constraint side), delta: 0.0
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["per_server_max_move_", "tuple_index", "primary", "objective"]
+      required_absent: []
+      semantic_checks:
+        - question: "Did the agent discuss objectives BEFORE constraints in its analysis?"
+          weight: 3
+          rubric:
+            5: "Explicitly identified per_server_max_move_ objective regression as the PRIMARY blocker first, then listed broken constraints as secondary"
+            4: "Discussed objectives first but didn't clearly label primary vs secondary"
+            3: "Mentioned both but presented constraints before objectives"
+            2: "Focused on broken constraints, mentioned objectives as an afterthought"
+            1: "Ignored objectives entirely, only discussed constraints"
+        - question: "Did the agent explain constraint-objective duality for per_server_max_move_?"
+          weight: 2
+          rubric:
+            5: "Explained that per_server_max_move_ appears as BOTH constraint (STILL_BROKEN) AND objective (regressed), and that the objective regression is what blocks the move"
+            4: "Mentioned duality but didn't fully explain it"
+            3: "Noticed both entries but didn't connect them"
+            2: "Only discussed one side (constraint or objective)"
+            1: "Didn't notice the duality at all"
+      artifact_checks: []
+
+  - id: TC-011
+    name: "Mandatory deep investigation for per_server_max_move"
+    category: best_practices
+    prompt: "Run test_bp_002, eval_move shows per_server_max_move_ objective regressed for shard 50000:0,5000000001-0,5000000001:0 to server -333444555. What's the full picture?"
+    description: "Tests that the agent runs ALL companion tools per Recipe 2 (mandatory deep investigation)"
+    expected_behavior: "Must run list_server_moves --shard, list_server_moves --server (both), query_mip (both), compute-moved-data (both)"
+    eval_target: tool_usage
+    mock_data: |
+      list_server_moves --shard: src=666777888, dst=666777888 (not moved)
+      list_server_moves --server 666777888: from=16, to=0, total=16
+      list_server_moves --server -333444555: from=0, to=3, total=3
+      query_mip --server 666777888: 2 MIP from, 1 MIP to
+      query_mip --server -333444555: 0 MIP, 0 MIP
+      compute-moved-data 666777888 --proposed: total=16, with_proposed=17
+      compute-moved-data -333444555 --proposed: total=3, with_proposed=4
+      scopeItemLimits: 666777888=17, -333444555=20
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "list_server_moves"
+      - "query_mip"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["list_server_moves", "query_mip", "compute-moved-data", "666777888", "-333444555"]
+      required_absent: []
+      semantic_checks:
+        - question: "Did the agent run ALL required companion tools for BOTH servers?"
+          weight: 3
+          rubric:
+            5: "Ran list_server_moves, query_mip, and compute-moved-data for BOTH source and destination servers"
+            4: "Ran all tools for both but missed compute-moved-data for one"
+            3: "Ran most tools for both servers but missed query_mip"
+            2: "Only investigated one server thoroughly"
+            1: "Only ran eval_move, skipped all companion tools"
+        - question: "Did the agent correctly identify which server caused the violation?"
+          weight: 2
+          rubric:
+            5: "Correctly identified which server's MOVED_DATA exceeds its limit with exact numbers"
+            4: "Identified the correct server but numbers were approximate"
+            3: "Mentioned both servers but didn't clearly identify the violating one"
+            2: "Identified the wrong server"
+            1: "Didn't identify any specific server"
+      artifact_checks: []
+
+  - id: TC-012
+    name: "Hidden factors: moves in progress"
+    category: best_practices
+    prompt: "Run test_bp_003, shard 60000:0,6000000001-0,6000000001:0 to server -444555666. eval_move shows per_server_max_move_ violation but list_server_moves only shows 15 moves and the limit is 20. The math doesn't add up. What's going on?"
+    description: "Tests that the agent checks for moves in progress when the math from solver moves alone doesn't explain the violation"
+    expected_behavior: "Should run query_mip to check for moves in progress, which account for the missing count"
+    eval_target: response
+    mock_data: |
+      list_server_moves --server source_server: from=15, to=0, total=15
+      query_mip --server source_server: 6 shards with has_move_in_progress=1 FROM server
+      So: 15 solver moves + 6 MIP = 21 total MOVED_DATA, exceeding limit of 20.
+      The 6 moves in progress are invisible in INITIAL→FINAL diff.
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "list_server_moves"
+      - "query_mip"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["moves in progress", "query_mip", "has_move_in_progress"]
+      required_absent: []
+      semantic_checks:
+        - question: "Did the agent identify moves in progress as the hidden factor explaining the math discrepancy?"
+          weight: 3
+          rubric:
+            5: "Immediately identified MIP as the hidden factor, ran query_mip, showed complete accounting: 15 solver + 6 MIP = 21 > 20"
+            4: "Identified MIP but took some time to connect the dots"
+            3: "Mentioned MIP as a possibility but didn't run query_mip"
+            2: "Struggled to explain the discrepancy"
+            1: "Did not identify the hidden factor"
+        - question: "Did the agent explain WHY moves in progress are invisible in the move diff?"
+          weight: 2
+          rubric:
+            5: "Explained that MIP are not in INITIAL→FINAL diff, baked into problem definition, and contribute to MOVED_DATA on both source and destination"
+            4: "Explained MIP are invisible but didn't explain why"
+            3: "Mentioned MIP but didn't explain the visibility issue"
+            2: "Vague mention of hidden factors"
+            1: "No explanation"
+      artifact_checks: []
+
+  - id: TC-013
+    name: "Spec reading before values"
+    category: best_practices
+    prompt: "Run test_bp_004, shard 70000:0,7000000001-0,7000000001:0 to server -555666777. The blocking constraint is BALANCE_LOADlower_bound_region_gbl_flash_storage. Explain what this constraint means."
+    description: "Tests that the agent reads and explains the spec BEFORE showing raw values"
+    expected_behavior: "Should first read the spec (BalanceLoadSpec or similar), translate to plain language, then connect to the violation values"
+    eval_target: response
+    mock_data: |
+      eval_move result:
+        verdict: BLOCKED_BY_CONSTRAINT
+        constraints (BROKEN):
+          - BALANCE_LOADlower_bound_region_gbl_flash_storage, baseline: 0.0, override: 0.00123, delta: 0.00123
+        specs:
+          BALANCE_LOADlower_bound_region_gbl_flash_storage:
+            type: constraint
+            spec: BalanceLoadSpec
+              scope: __server__
+              dimension: flash_storage
+              lowerBound: 0.8
+              upperBound: 1.2
+              squares: true
+              filter: itemsBlacklist containing FAKE_TARGET_HOST and some server hashes
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["BalanceLoadSpec", "flash_storage", "lower"]
+      required_absent: []
+      semantic_checks:
+        - question: "Did the agent explain the spec in plain language BEFORE discussing values?"
+          weight: 3
+          rubric:
+            5: "First explained the spec type and parameters in plain language (e.g., 'This spec keeps flash_storage load balanced across servers within 0.8-1.2× of the mean'), then connected to the violation"
+            4: "Explained the spec but interleaved with values"
+            3: "Showed some spec details but mostly focused on values"
+            2: "Showed raw spec JSON without explanation"
+            1: "Didn't read or explain the spec at all"
+      artifact_checks: []
+
+  - id: TC-014
+    name: "FINAL→FINAL for SAFE moves"
+    category: best_practices
+    prompt: "Run test_bp_005, shard 80000:0,8000000001-0,8000000001:0 to server -666777888. eval_move says the move is SAFE with default INITIAL→FINAL base. But the solver didn't make it. I already told you the verdict is SAFE."
+    description: "Tests that the agent runs FINAL→FINAL comparison for SAFE-but-not-made moves per Recipe 4"
+    expected_behavior: "Should NOT stop at SAFE verdict. Must automatically run FINAL→FINAL to isolate marginal impact"
+    eval_target: tool_usage
+    mock_data: |
+      eval_move (INITIAL→FINAL):
+        verdict: SAFE
+        many STILL_BROKEN constraints with large negative deltas
+
+      eval_move (--src-base FINAL --dst-base FINAL):
+        verdict: SAFE
+        objectives: 0 (hidden by 1e-9 threshold)
+        constraints: 2 with small negative deltas (-0.003, -0.001)
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "--run-id"
+      - "--src-base"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["FINAL", "--src-base FINAL", "marginal"]
+      required_absent: []
+      semantic_checks:
+        - question: "Did the agent proceed to FINAL→FINAL analysis after detecting SAFE?"
+          weight: 3
+          rubric:
+            5: "Immediately ran --src-base FINAL --dst-base FINAL to isolate marginal impact, explained why INITIAL→FINAL can be misleading"
+            4: "Ran FINAL→FINAL but didn't fully explain why"
+            3: "Mentioned FINAL→FINAL but didn't execute it"
+            2: "Stopped at SAFE verdict, suggested the move isn't blocked"
+            1: "Reported SAFE and stopped investigating"
+      artifact_checks: []
+
+  - id: TC-015
+    name: "Structured tables and complete math"
+    category: best_practices
+    prompt: "Run test_bp_006, why was shard 90000:0,9000000001-0,9000000001:0 not moved to server -777888999? I need a detailed breakdown."
+    description: "Tests that the agent presents results with structured MOVED_DATA accounting tables and complete math"
+    expected_behavior: "Should present per-server tables showing solver moves, MIP, subtotal, proposed, total, limit, and over/under"
+    eval_target: response
+    mock_data: |
+      eval_move: verdict=BLOCKED_BY_CONSTRAINT, per_server_max_move_ regressed (tuple_index=0)
+      Source server: SRC_123 (limit=20)
+        solver from=17, solver to=0, MIP from=2, MIP to=1
+      Destination server: DST_456 (limit=22)
+        solver from=0, solver to=5, MIP from=0, MIP to=0
+      compute-moved-data SRC_123 --proposed: total=17, with_proposed=18
+      compute-moved-data DST_456 --proposed: total=5, with_proposed=6
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "list_server_moves"
+      - "query_mip"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["limit", "total"]
+      required_absent: []
+      semantic_checks:
+        - question: "Did the agent present a clear, structured accounting table for each server?"
+          weight: 3
+          rubric:
+            5: "Presented a table per server with: solver moves from, to, MIP from, to, subtotal, proposed, total, limit, over/under. Clear labels and math."
+            4: "Presented tables but missing one component"
+            3: "Showed numbers but not in a table format"
+            2: "Showed some numbers but incomplete accounting"
+            1: "No structured presentation, just raw tool output"
+        - question: "Did the agent correctly compute the final math (total vs limit)?"
+          weight: 2
+          rubric:
+            5: "Correct arithmetic for both servers, clearly stated which server causes violation"
+            4: "Correct math but less clear presentation"
+            3: "Mostly correct but one arithmetic error"
+            2: "Multiple errors in computation"
+            1: "No computation attempted"
+      artifact_checks: []
+
+  # ============================================================
+  # BUSINESS IMPACT (4 tests, ~16%)
+  # ============================================================
+
+  - id: TC-016
+    name: "Full Recipe 1: end-to-end blocked move debugging"
+    category: business_impact
+    prompt: "For run test_bi_001, why was shard 11111:0,1111100001-0,1111100001:0 not moved to server -111111111? I've been staring at Explorer for an hour trying to figure this out."
+    description: "Measures the time saved by automated debugging vs manual Explorer investigation. A human would need to: navigate Explorer, read constraint tables, cross-reference server data, check MIP manually. The skill automates all of this."
+    expected_behavior: "Full Recipe 1 workflow: eval_move → identify primary blocker → run companion tools → present complete analysis with tables"
+    eval_target: response
+    mock_data: |
+      eval_move: verdict=BLOCKED_BY_CONSTRAINT
+      objectives: per_server_max_move_ regressed (tuple_index=0, delta=1.0)
+      constraints (BROKEN): 3 BALANCE_LOAD lower bounds
+      constraints (STILL_BROKEN): non_accepting_containers, FIX_OVER_CAPACITY variants
+
+      Source server SRC_A (limit=18):
+        solver from=16, to=0, MIP from=2, to=0
+        Total MOVED_DATA = 18, with proposed = 19, over limit by 1
+
+      Destination server DST_B (limit=20):
+        solver from=0, to=4, MIP from=0, to=0
+        Total = 4, with proposed = 5, under limit by 15
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "list_server_moves"
+      - "query_mip"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["per_server_max_move_", "MOVED_DATA", "source server", "limit"]
+      required_absent: ["I cannot"]
+      semantic_checks:
+        - question: "How much manual investigation time does this skill save per use?"
+          weight: 3
+          rubric:
+            5: "Replaces 1-2 hours of manual Explorer investigation: navigating UI, cross-referencing server data, checking MIP, computing math. Saves 90%+ of the effort."
+            4: "Replaces 30-60 minutes of manual work"
+            3: "Replaces 15-30 minutes but still requires user interpretation"
+            2: "Saves some time but user still needs to do most of the work"
+            1: "No meaningful time savings"
+        - question: "Does the skill produce output quality exceeding what a human would typically create?"
+          weight: 2
+          rubric:
+            5: "Structured tables, complete accounting, identifies primary vs secondary blockers, explains specs — better than typical human analysis"
+            4: "Good quality, comparable to expert human analysis"
+            3: "Adequate quality but a human expert would catch more"
+            2: "Below human expert quality"
+            1: "Worse than manual investigation"
+        - question: "Is this skill applicable to many different rebalancer runs and scenarios?"
+          weight: 2
+          rubric:
+            5: "Works for any SM/RAS run, any constraint type, any recipe — universal debugging tool"
+            4: "Works for most scenarios but limited on edge cases"
+            3: "Works for common cases only"
+            2: "Limited to specific constraint types"
+            1: "Single-use only"
+      artifact_checks: []
+
+  - id: TC-017
+    name: "Recipe 2: MOVED_DATA accuracy"
+    category: business_impact
+    prompt: "Run test_bi_002, per_server_max_move_ keeps firing on server -222222222. Can you give me the complete MOVED_DATA breakdown? I need exact numbers."
+    description: "Tests the accuracy and completeness of MOVED_DATA accounting — a task that's error-prone when done manually"
+    expected_behavior: "Should produce exact solver move count, MIP count, total, and comparison against limit with no arithmetic errors"
+    eval_target: response
+    mock_data: |
+      list_server_moves --server -222222222:
+        moves_from=12, moves_to=5, total=17
+        12 specific shards moved from, 5 specific shards moved to
+
+      query_mip --server -222222222:
+        MIP from server: 3 shards (shard_a, shard_b, shard_c)
+        MIP to server: 1 shard (shard_d)
+
+      compute-moved-data -222222222:
+        total_moved_data: 17.0
+
+      scopeItemLimits for -222222222: 20
+      Total MOVED_DATA = 17 (solver) + 4 (MIP) = 21, exceeding limit by 1
+    intercept_patterns:
+      - "buck build"
+      - "list_server_moves"
+      - "query_mip"
+      - "--run-id"
+      - "--compute-moved-data"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["MOVED_DATA", "17", "21", "20"]
+      required_absent: []
+      semantic_checks:
+        - question: "Is the MOVED_DATA accounting arithmetically correct?"
+          weight: 3
+          rubric:
+            5: "All numbers correct: 12 from + 5 to = 17 solver, 3+1 = 4 MIP, 17+4 = 21 total, limit=20, over by 1"
+            4: "Correct total but minor presentation issue"
+            3: "Mostly correct but one component miscounted"
+            2: "Multiple arithmetic errors"
+            1: "Completely wrong accounting"
+        - question: "Does the skill automate a task that's genuinely difficult to do manually?"
+          weight: 2
+          rubric:
+            5: "Eliminates manual MIP cross-referencing (invisible in Explorer UI), automatic computation — humans frequently miss MIP"
+            4: "Automates significant manual work"
+            3: "Somewhat helpful but human could do it with effort"
+            2: "Marginal improvement over manual"
+            1: "No real difficulty reduction"
+      artifact_checks: []
+
+  - id: TC-018
+    name: "Recipe 4: precision truncation diagnosis"
+    category: business_impact
+    prompt: "Run test_bi_003, shard 33333:0,3333300001-0,3333300001:0 to server -333333333. Explorer shows it's SAFE but solver didn't make it. I've checked everything I can think of."
+    description: "Tests the skill's ability to diagnose precision truncation — a subtle issue that requires deep solver knowledge"
+    expected_behavior: "Should run INITIAL→FINAL (SAFE), then FINAL→FINAL (0 objectives but constraint improvements), and diagnose precision truncation"
+    eval_target: response
+    mock_data: |
+      eval_move (INITIAL→FINAL): verdict=SAFE, many STILL_BROKEN constraints improving
+
+      eval_move (FINAL→FINAL):
+        verdict: SAFE
+        objectives: 0 (none shown — all below 1e-9 display threshold)
+        constraints: 3 with small improvements
+          - BALANCE_LOADflash_storage: delta=-0.003
+          - BALANCE_LOADcpu: delta=-0.001
+          - soft_threshold_ram_storage: delta=-0.0005
+
+      This is the "zero objectives but constraint improvements visible" pattern.
+      Sub-1e-9 objective improvements are hidden by eval_move's display threshold.
+      Recommended: 1e-16 precision tolerance.
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "--run-id"
+      - "--src-base"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["precision", "1e-9", "1e-16", "FINAL"]
+      required_absent: []
+      semantic_checks:
+        - question: "Does the skill diagnose precision truncation — something that requires rare expertise?"
+          weight: 3
+          rubric:
+            5: "Correctly identified the 'zero objectives + constraint improvements' pattern, explained eval_move's 1e-9 display threshold, recommended 1e-16 precision — this diagnosis requires deep solver internals knowledge"
+            4: "Identified precision as the issue but didn't fully explain the mechanism"
+            3: "Mentioned precision as a possibility"
+            2: "Vaguely mentioned solver might not see improvements"
+            1: "Failed to diagnose the issue"
+        - question: "Would a human without deep solver knowledge have found this issue?"
+          weight: 2
+          rubric:
+            5: "No — precision truncation is invisible in Explorer UI and requires knowledge of eval_move's display threshold and solver precision internals"
+            4: "Unlikely — would require significant expertise"
+            3: "Possible but very difficult"
+            2: "A knowledgeable human might find it"
+            1: "Easy to find manually"
+      artifact_checks: []
+
+  - id: TC-019
+    name: "Multi-recipe session value"
+    category: business_impact
+    prompt: "I'm having multiple issues with run test_bi_004. First, shard A was blocked from moving to server X. Then shard B seems SAFE to move to server Y but the solver didn't. Can you investigate both?"
+    description: "Tests the skill's value in a multi-issue debugging session — combining Recipe 1 and Recipe 4"
+    expected_behavior: "Should handle both issues systematically, applying appropriate recipe for each"
+    eval_target: response
+    mock_data: |
+      Issue 1 (shard A to server X):
+        eval_move: verdict=BLOCKED_BY_CONSTRAINT
+        per_server_max_move_ regressed (tuple_index=0)
+        Source server: limit=18, total MOVED_DATA=19 (exceeds)
+
+      Issue 2 (shard B to server Y):
+        eval_move (INITIAL→FINAL): verdict=SAFE
+        eval_move (FINAL→FINAL): 0 objectives, small constraint improvements
+        Precision truncation case.
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "list_server_moves"
+      - "query_mip"
+      - "--run-id"
+      - "--src-base"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["BLOCKED_BY_CONSTRAINT", "SAFE", "precision"]
+      required_absent: []
+      semantic_checks:
+        - question: "Did the agent handle both issues with appropriate recipes?"
+          weight: 3
+          rubric:
+            5: "Applied Recipe 1 for the blocked move and Recipe 4 for the SAFE-but-not-made move, with full investigation for each"
+            4: "Handled both but one was less thorough"
+            3: "Handled one well, the other superficially"
+            2: "Only addressed one issue"
+            1: "Failed to address either issue properly"
+        - question: "Is this multi-issue session more valuable than two separate investigations?"
+          weight: 2
+          rubric:
+            5: "Reused the sandbox and tools across both issues, provided a unified summary comparing both — more efficient than separate sessions"
+            4: "Some tool reuse, separate but linked analyses"
+            3: "Treated as two independent investigations"
+            2: "Redundant work between the two investigations"
+            1: "Less efficient than separate investigations"
+      artifact_checks: []
+
+  # ============================================================
+  # TASK COMPLETION (6 tests, ~24%)
+  # ============================================================
+
+  - id: TC-020
+    name: "Recipe 1: BLOCKED_BY_CONSTRAINT with objective regression"
+    category: task_completion
+    prompt: "For run test_tc_001, why was shard 44444:0,4444400001-0,4444400001:0 not moved to server -444444444?"
+    description: "End-to-end Recipe 1 with both BROKEN constraints and regressed objective — tests full workflow completion"
+    expected_behavior: "Should: run eval_move, identify per_server_max_move_ as primary (tuple_index=0), run all companion tools, present complete analysis"
+    eval_target: all
+    mock_data: |
+      eval_move:
+        verdict: BLOCKED_BY_CONSTRAINT
+        objectives:
+          - per_server_max_move_: regressed, tuple_index=0, baseline=0, override=1, delta=1
+        constraints (BROKEN):
+          - BALANCE_LOADlower_bound_region_gbl_flash_storage: baseline=0.0, override=6.9e-05
+          - BALANCE_LOADlower_bound_region_gbl_cpu: baseline=0.0, override=6.8e-05
+          - BALANCE_LOADlower_bound_region_gbl_count: baseline=0.0, override=4e-06
+        constraints (STILL_BROKEN): non_accepting_containers, per_server_max_move_ (constraint), FIX_OVER_CAPACITYflash_storage
+        specs:
+          per_server_max_move_: CapacitySpec, definition=MOVED_DATA, bound=MAX, scope=__server__, dimension=__shard___count__
+            scopeItemLimits: {"-444444444": 20, "SRC_SERVER": 19}
+
+      list_server_moves --shard: src=SRC_SERVER, dst=SRC_SERVER (not moved)
+      list_server_moves --server SRC_SERVER: from=18, to=0, total=18
+      list_server_moves --server -444444444: from=0, to=1, total=1
+      query_mip --server SRC_SERVER: 1 MIP from (to FAKE_TARGET_HOST)
+      query_mip --server -444444444: 0 MIP
+      compute-moved-data SRC_SERVER --proposed: total=18, with_proposed=19
+      compute-moved-data -444444444 --proposed: total=1, with_proposed=2
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "list_server_moves"
+      - "query_mip"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["per_server_max_move_", "MOVED_DATA", "tuple_index", "SRC_SERVER", "-444444444", "limit", "19"]
+      required_absent: ["I cannot"]
+      semantic_checks:
+        - question: "Did the agent complete the FULL Recipe 1 workflow end-to-end?"
+          weight: 3
+          rubric:
+            5: "Complete workflow: eval_move → identify primary blocker (objective) → lookup shard source → investigate both servers → build MOVED_DATA accounting → identify violating server → explain with spec"
+            4: "Mostly complete, missing one companion tool"
+            3: "Partial workflow, skipped deep investigation"
+            2: "Only ran eval_move and reported raw output"
+            1: "Failed to complete any meaningful investigation"
+        - question: "Did the agent correctly identify the source server as the violating server?"
+          weight: 3
+          rubric:
+            5: "Correctly identified SRC_SERVER as the violator: 18 solver + 1 MIP = 19, with proposed = 20, limit = 19, over by 1"
+            4: "Identified correct server with minor math presentation issue"
+            3: "Mentioned both servers but didn't clearly identify the violator"
+            2: "Identified the wrong server"
+            1: "Didn't identify any specific server"
+        - question: "Were primary (objective) and secondary (constraints) blockers clearly distinguished?"
+          weight: 2
+          rubric:
+            5: "Clearly labeled per_server_max_move_ objective as PRIMARY, BALANCE_LOAD constraints as SECONDARY"
+            4: "Distinguished but less clearly"
+            3: "Mentioned both without clear hierarchy"
+            2: "Treated all equally"
+            1: "Only discussed one type"
+      artifact_checks: []
+
+  - id: TC-021
+    name: "Recipe 2: MOVED_DATA with destination server violation"
+    category: task_completion
+    prompt: "Run test_tc_002, per_server_max_move_ fires for shard 55555:0,5555500001-0,5555500001:0 to server -555555555. Investigate."
+    description: "Tests Recipe 2 end-to-end where the DESTINATION server (not source) is the one exceeding its limit"
+    expected_behavior: "Should investigate both servers and correctly identify that the destination server is the one causing the violation"
+    eval_target: response
+    mock_data: |
+      eval_move: verdict=OBJECTIVE_REGRESSION, per_server_max_move_ regressed (tuple_index=0)
+      specs: scopeItemLimits: {"SRC_999": 25, "-555555555": 15}
+
+      list_server_moves --shard: src=SRC_999, dst=SRC_999
+      list_server_moves --server SRC_999: from=5, to=0, total=5
+      list_server_moves --server -555555555: from=0, to=14, total=14
+      query_mip --server SRC_999: 0 MIP
+      query_mip --server -555555555: 1 MIP to server
+      compute-moved-data SRC_999 --proposed: total=5, with_proposed=6
+      compute-moved-data -555555555 --proposed: total=14, with_proposed=15
+
+      Source SRC_999: 5 solver + 0 MIP = 5, with proposed = 6, limit = 25, under by 19 ✅
+      Destination -555555555: 14 solver + 1 MIP = 15, with proposed = 16, limit = 15, over by 1 ❌
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "list_server_moves"
+      - "query_mip"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["-555555555", "destination", "limit", "15", "16"]
+      required_absent: []
+      semantic_checks:
+        - question: "Did the agent correctly identify the DESTINATION server as the violator (not the source)?"
+          weight: 3
+          rubric:
+            5: "Correctly identified destination -555555555 as violator: 14+1=15, proposed=16 > limit=15. Source SRC_999 is fine (6 < 25)."
+            4: "Identified destination but presentation was less clear"
+            3: "Showed both servers' numbers but didn't clearly identify which is the violator"
+            2: "Identified source as the violator (wrong)"
+            1: "Didn't identify any specific server"
+      artifact_checks: []
+
+  - id: TC-022
+    name: "Recipe 4: SAFE move with precision truncation"
+    category: task_completion
+    prompt: "For run test_tc_003, shard 66666:0,6666600001-0,6666600001:0 to server -666666666 shows as SAFE in my eval_move but the solver didn't include it. Walk me through the full diagnosis."
+    description: "End-to-end Recipe 4 with precision truncation — the most complex debugging scenario"
+    expected_behavior: "Should run INITIAL→FINAL (SAFE), then FINAL→FINAL (0 objectives, constraint improvements), diagnose precision truncation, compute required tolerance, recommend standalone solver verification"
+    eval_target: response
+    mock_data: |
+      eval_move (INITIAL→FINAL):
+        verdict: SAFE
+        objectives: none regressed
+        constraints: 5 STILL_BROKEN with large negative deltas (improvements from other solver moves)
+
+      eval_move (--src-base FINAL --dst-base FINAL):
+        verdict: SAFE
+        objectives: 0 shown (all below 1e-9 display threshold)
+        constraints with changes:
+          - BALANCE_LOADflash_storage: baseline=0.124, override=0.121, delta=-0.003
+          - soft_threshold_cpu: baseline=11.097, override=11.044, delta=-0.053
+
+      This is the "zero objectives but constraint improvements visible" pattern.
+      Precision calculation for BALANCE_LOADflash_storage:
+        abs_delta = |0.121 - 0.124| = 0.003
+        rel_delta = 0.003 * 2 / (0.124 + 0.121) = 0.0245
+        Both PASS the 1e-10 threshold, so precision on the constraint side is fine.
+        But the hidden objective improvement is likely much smaller (sub-1e-9).
+      Recommend: 1e-16 precision tolerance and standalone solver verification.
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "--run-id"
+      - "--src-base"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["SAFE", "FINAL", "precision", "1e-9", "1e-16", "objective"]
+      required_absent: []
+      semantic_checks:
+        - question: "Did the agent complete the full Recipe 4 diagnostic workflow?"
+          weight: 3
+          rubric:
+            5: "Full workflow: INITIAL→FINAL (SAFE) → FINAL→FINAL (0 obj + constraint improvements) → precision truncation diagnosis → tolerance calculation → standalone solver verification recommendation"
+            4: "Mostly complete, missing precision calculation or solver verification"
+            3: "Ran both comparisons but shallow diagnosis"
+            2: "Only ran one comparison"
+            1: "Stopped at SAFE verdict"
+        - question: "Did the agent correctly explain why INITIAL→FINAL improvements are misleading?"
+          weight: 2
+          rubric:
+            5: "Explained that INITIAL→FINAL credits this move for improvements made by OTHER solver moves, FINAL→FINAL isolates the true marginal impact"
+            4: "Mentioned the distinction but less clearly"
+            3: "Mentioned both bases but didn't explain the misleading aspect"
+            2: "Vague explanation"
+            1: "Didn't explain"
+        - question: "Did the agent recommend concrete next steps (precision tolerance + solver verification)?"
+          weight: 2
+          rubric:
+            5: "Recommended specific precision values (1e-16), provided standalone solver commands, suggested running both in parallel"
+            4: "Recommended precision change but no solver commands"
+            3: "Mentioned precision as an issue but no concrete actions"
+            2: "Vague recommendations"
+            1: "No recommendations"
+      artifact_checks: []
+
+  - id: TC-023
+    name: "Edge case: expired sandbox"
+    category: task_completion
+    prompt: "For run expired_old_run_12345, why was shard 77777:0,7777700001-0,7777700001:0 not moved to server -777777777?"
+    description: "Tests error handling when the sandbox has expired from Manifold"
+    expected_behavior: "Should attempt to load the sandbox, detect the error, and advise the user to find a fresh run ID"
+    eval_target: response
+    mock_data: |
+      eval_move --run-id "expired_old_run_12345" returns error:
+        "Sandbox not loaded: Manifold object expired or not found for run ID expired_old_run_12345.
+         This run may have been garbage-collected from Manifold."
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["expired", "fresh", "run"]
+      required_absent: []
+      semantic_checks:
+        - question: "Did the agent handle the error gracefully and provide actionable guidance?"
+          weight: 3
+          rubric:
+            5: "Detected sandbox expiration, explained that run data expires in Manifold, suggested finding a fresh run ID from Explorer or Scuba"
+            4: "Detected error and suggested getting a new run ID"
+            3: "Detected error but vague guidance"
+            2: "Reported error without guidance"
+            1: "Kept retrying or crashed"
+      artifact_checks: []
+
+  - id: TC-024
+    name: "Constraint-objective duality: STILL_BROKEN + regressed"
+    category: task_completion
+    prompt: "For run test_tc_005, shard 88888:0,8888800001-0,8888800001:0 to server -888888888. The eval_move shows per_server_max_move_ as STILL_BROKEN in constraints but regressed in objectives. I'm confused — which one matters?"
+    description: "Tests the agent's understanding of constraint-objective duality, a key concept in the skill"
+    expected_behavior: "Should explain that per_server_max_move_ exists as BOTH a constraint and objective, the constraint tracks global violation while the objective tracks marginal cost, and the objective regression is what blocks the move"
+    eval_target: response
+    mock_data: |
+      eval_move:
+        verdict: OBJECTIVE_REGRESSION
+        constraints:
+          - per_server_max_move_: status=STILL_BROKEN, baseline=21000.0, override=21000.0, delta=0.0
+        objectives:
+          - per_server_max_move_: direction=regressed, baseline=0.0, override=1.0, delta=1.0, tuple_index=0
+        specs:
+          per_server_max_move_:
+            As constraint: tracks global total violation across all servers (baseline=21000 = 21000 violations system-wide)
+            As objective (tuple_index=0): tracks marginal cost of THIS specific move (0→1 = new violation)
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["constraint", "objective", "duality", "tuple_index", "marginal"]
+      required_absent: []
+      semantic_checks:
+        - question: "Did the agent clearly explain constraint-objective duality?"
+          weight: 3
+          rubric:
+            5: "Clearly explained: per_server_max_move_ is BOTH constraint (global, STILL_BROKEN=unchanged) AND objective (marginal, regressed=your move causes a new violation). The objective regression at tuple_index=0 has strict lexicographic priority and blocks the move."
+            4: "Explained duality but less clearly on the global vs marginal distinction"
+            3: "Mentioned both entries but didn't explain the distinction"
+            2: "Only explained one side"
+            1: "Did not explain duality, left the user confused"
+        - question: "Did the agent explain why the objective regression matters more?"
+          weight: 2
+          rubric:
+            5: "Explained tuple_index=0 means strict lexicographic priority — ANY regression blocks the move regardless of constraint status"
+            4: "Mentioned priority but didn't explain lexicographic ordering"
+            3: "Said the objective matters more without explaining why"
+            2: "Treated constraint and objective equally"
+            1: "Said the STILL_BROKEN constraint is what blocks the move (wrong)"
+      artifact_checks: []
+
+  - id: TC-025
+    name: "SAFE verdict when user expected blocked"
+    category: task_completion
+    prompt: "Run test_tc_006, I tried to move shard 99999:0,9999900001-0,9999900001:0 to server -999999999 and it seemed like it should be blocked but eval_move says SAFE. What does this mean?"
+    description: "Tests handling of SAFE verdict — should not just report SAFE and stop, should follow Recipe 4"
+    expected_behavior: "Should report SAFE verdict, then explain what this means, and follow Recipe 4 to investigate why the solver didn't make this SAFE move"
+    eval_target: response
+    mock_data: |
+      eval_move (INITIAL→FINAL):
+        verdict: SAFE
+        objectives: none regressed
+        constraints: various STILL_BROKEN with negative deltas (improvements)
+
+      The move is not blocked. If the user wants to know WHY the solver didn't make it,
+      proceed with Recipe 4 (FINAL→FINAL comparison).
+    intercept_patterns:
+      - "buck build"
+      - "eval_move"
+      - "--run-id"
+    target_skills:
+      - "fbcode/algopt/rebalancer/.llms/skills/rebalancer/SKILL.md"
+    quality_criteria:
+      required_present: ["SAFE", "not blocked"]
+      required_absent: []
+      semantic_checks:
+        - question: "Did the agent explain what SAFE means and proactively offer to investigate further?"
+          weight: 3
+          rubric:
+            5: "Explained SAFE = move doesn't break anything, but solver may skip if no marginal benefit. Offered to run FINAL→FINAL to investigate why it wasn't made."
+            4: "Explained SAFE and mentioned further investigation is possible"
+            3: "Reported SAFE but didn't offer next steps"
+            2: "Just reported SAFE verdict"
+            1: "Misinterpreted SAFE as an error"
+      artifact_checks: []

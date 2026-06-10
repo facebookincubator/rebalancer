@@ -1,0 +1,96 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: packaging_mac
+
+on:
+  workflow_run:
+    workflows: ["mac"]
+    branches: [main, richard/packaging]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'mac workflow run ID to pull the rebalancer artifact from'
+        required: true
+        type: string
+
+permissions:
+  actions: read    # needed for downloading artifacts
+  contents: read   # needed for actions/checkout
+
+concurrency:
+  group: packaging_mac-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+    - name: Download Mac artifacts
+      uses: actions/download-artifact@v6
+      with:
+        name: rebalancer
+        path: _artifacts
+        run-id: ${{ github.event.workflow_run.id || inputs.run_id }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Determine version
+      id: version
+      run: |
+        VERSION=$(cat version.txt)
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "Determined version: $VERSION"
+
+    - name: Build Homebrew bottle
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        BOTTLE_DIR="rebalancer/${VERSION}"
+        mkdir -p "${BOTTLE_DIR}"
+        cp -a _artifacts/mac/* "${BOTTLE_DIR}/"
+        tar czf "rebalancer-${VERSION}.arm64_sonoma.bottle.tar.gz" rebalancer/
+
+    - name: Validate Homebrew bottle structure
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        VALIDATE=$(mktemp -d)
+        tar xzf "rebalancer-${VERSION}.arm64_sonoma.bottle.tar.gz" -C "$VALIDATE"
+        echo "=== Bottle contents ==="
+        find "$VALIDATE" -type f | sort
+        # The bottle must contain librebalancer.dylib at the versioned cellar path.
+        # Homebrew maps rebalancer/<version>/lib/librebalancer.dylib → lib/.
+        if ! find "$VALIDATE" -name "librebalancer.dylib" | grep -q .; then
+          echo "ERROR: librebalancer.dylib not found in bottle"
+          exit 1
+        fi
+        # At least one example binary must be present.
+        if ! find "$VALIDATE" -name "*.exe" | grep -q .; then
+          echo "ERROR: no example binaries found in bottle"
+          exit 1
+        fi
+        echo "Bottle structure OK"
+        rm -rf "$VALIDATE"
+
+    - name: Upload Homebrew bottle
+      uses: actions/upload-artifact@v6
+      with:
+        name: rebalancer-bottle
+        path: "*.bottle.tar.gz"

@@ -1,0 +1,108 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#pragma once
+
+#include "algopt/rebalancer/entities/Universe.h"
+#include "algopt/rebalancer/solver/moves/MoveSet.h"
+#include "algopt/rebalancer/solver/summary/LabeledExpressions.h"
+#include "algopt/rebalancer/solver/utils/GlobalObjectiveValue.h"
+
+#include <folly/small_vector.h>
+
+namespace facebook::rebalancer {
+
+struct ObjectiveDelta {
+  LabeledExpressionPtr objective;
+  double oldValue;
+  double newValue;
+
+  ObjectiveDelta(
+      LabeledExpressionPtr objective,
+      double oldValue,
+      double newValue)
+      : objective(std::move(objective)),
+        oldValue(oldValue),
+        newValue(newValue) {}
+};
+
+using ObjectiveDeltaSet = std::vector<ObjectiveDelta>;
+using ObjectiveDeltaSets =
+    folly::small_vector<ObjectiveDeltaSet, expected_tuple_size>;
+
+class MoveResult {
+ public:
+  static MoveResult makeEmpty();
+  static MoveResult makeValid(
+      MoveSet moveSet,
+      GlobalObjectiveValue oldValue,
+      GlobalObjectiveValue newValue,
+      std::optional<GlobalObjectiveValue> arbiterValue = std::nullopt,
+      std::optional<ObjectiveDeltaSets> objectiveDeltas = std::nullopt);
+  static MoveResult makeInvalid(
+      MoveSet moveSet,
+      std::optional<LabeledExpressionSet> invalidConstraints = std::nullopt);
+
+  // true if the result does not contain a move
+  bool isEmpty() const;
+
+  // true if the move does not break any constraints
+  bool isValid() const;
+
+  // whether the value after the move is better/neutral/worse than before
+  bool isBetter(const Precision& precision) const;
+  bool isNeutral(const Precision& precision) const;
+  bool isWorse(const Precision& precision) const;
+
+  const MoveSet& getMoveSet() const;
+  int64_t getEvalsCount() const;
+  bool hasObjectiveDeltas() const;
+
+  const ObjectiveDeltaSet& getFirstChangedObjectiveDelta(
+      const Precision& precision) const;
+  const ObjectiveDeltaSets& getObjectiveDeltas() const;
+
+  std::string toString(const entities::Universe& universe) const;
+
+  LabeledExpressionPtr getSmallestDeltaObjective(
+      const Precision& precision) const;
+  LabeledExpressionPtr getLargestDeltaObjective(
+      const Precision& precision) const;
+  LabeledExpressionPtr getFirstInvalidConstraint() const;
+
+  // merges another move result into this one, keeping the best of the 2 moves,
+  // and aggregating the stats of both
+  // TODO: separate aggregator from the single result object
+  void aggregate(MoveResult&& other);
+
+  const GlobalObjectiveValue& getOldValue() const;
+  const GlobalObjectiveValue& getValue() const;
+
+ private:
+  MoveResult();
+  void clone(MoveResult& dst, const MoveResult& src);
+
+  bool empty_ = false;
+  bool valid_ = false;
+  int64_t evalsCount_ = 0;
+  MoveSet moveSet_;
+  GlobalObjectiveValue oldValue_;
+  GlobalObjectiveValue newValue_;
+  // used only for tie-breaking during aggregation
+  std::optional<GlobalObjectiveValue> arbiterValue_;
+  std::optional<ObjectiveDeltaSets> objectiveDeltas_;
+  std::optional<LabeledExpressionSet> invalidConstraints_;
+};
+
+} // namespace facebook::rebalancer

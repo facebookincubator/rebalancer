@@ -1,0 +1,57 @@
+{
+    "avoid_moving_players_file": "captains.json",
+    "constraints": [
+        {
+            "limit_ratio": 5.0,
+            "dimension": "player_count",
+            "scope": "team",
+            "type": "capacity_after_move"
+        },
+        {
+            "dimension": "weight",
+            "limit_ratio": 1.0,
+            "scope": "team",
+            "type": "capacity_after_move"
+        }
+    ],
+    "container_name": "team",
+    "dimensions": {
+        "skill": {
+            "players_file": "player_skills.json",
+            "leagues_file": "league_skills.json"
+        },
+        "height": {
+            "players_file": "player_heights.json",
+            "teams_file": "team_heights.json"
+        },
+        "weight": {
+            "players_file": "player_weights.json",
+            "teams_file": "team_car_capacity.json"
+        }
+    },
+    "goals": [
+        {
+            "allowed_imbalance": 1.01,
+            "allowed_value": 0.0,
+            "dimension": "height",
+            "scope": "team",
+            "type": "balance"
+        },
+        {
+            "allowed_imbalance": 1.01,
+            "allowed_value": 0.0,
+            "dimension": "skill",
+            "scope": "league",
+            "type": "balance"
+        }
+    ],
+    "player_map_file": "initial_teams.json",
+    "minimize_movement": [
+    ],
+    "object_name": "player",
+    "placement_scopes": {
+        "league": {
+            "team_to_scope_file": "leagues.json"
+        }
+    }
+}

@@ -1,0 +1,21 @@
+name: lint
+
+on:
+  push:
+    branches: [main, richard/packaging]
+  pull_request:
+    branches: [main, richard/packaging]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check for Windows macro conflicts
+        run: python3 tools/check_windows_macros.py algopt/
+      - name: Check benchmark file locations
+        run: python3 tools/check_benchmark_paths.py algopt/

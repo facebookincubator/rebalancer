@@ -1,0 +1,174 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "algopt/rebalancer/solver/moves/SwapNMoveType.h"
+
+#include "algopt/rebalancer/solver/iterators/Range.h"
+#include "algopt/rebalancer/solver/iterators/StlWrapper.h"
+#include "algopt/rebalancer/solver/iterators/Transform.h"
+#include "algopt/rebalancer/solver/moves/MoveHelper.h"
+
+#include <folly/container/irange.h>
+#include <folly/Random.h>
+
+namespace facebook::rebalancer {
+
+SwapNMoveType::SwapNMoveType(
+    const interface::LocalSearchSolverSpec& solverConfigs,
+    const interface::SwapNMoveTypeSpec& spec)
+    : MoveType(solverConfigs), spec_(spec) {}
+
+std::string SwapNMoveType::name() const {
+  return kSwapNMoveTypeName.str();
+}
+
+MoveResult SwapNMoveType::findBestMove(
+    const MovesEvaluator& evaluator,
+    entities::ContainerId hot_container,
+    MoveStatsAggregator& stats,
+    const SearchHints& /*hints*/,
+    double timeLimit) {
+  // get all objects that are allowed to move
+  PackerSet<entities::ObjectId> sourceObjectIds;
+  for (auto& objectName : *spec_.swapNSourceObjects()) {
+    sourceObjectIds.insert(evaluator.getProblem().objectId(objectName));
+  }
+
+  // number of parallel swaps of objects
+  const int concurrentObjects = *spec_.swapNConcurrentObjects();
+
+  // get all objects in the hot container
+  auto& hotObjectIds = evaluator.getDynamicObjects(hot_container);
+
+  // out of the hot objects, pick the ones that are allowed to move
+  std::vector<entities::ObjectId> objectIdsToMove;
+  for (auto hotObjectId : hotObjectIds) {
+    if (static_cast<int>(objectIdsToMove.size()) >= concurrentObjects) {
+      break;
+    }
+    if (sourceObjectIds.contains(hotObjectId)) {
+      objectIdsToMove.push_back(hotObjectId);
+    }
+  }
+
+  if (static_cast<int>(objectIdsToMove.size()) < concurrentObjects) {
+    // no valid moves possible because there are fewer objects to move than the
+    // concurrency number
+    return MoveResult::makeEmpty();
+  }
+
+  std::vector<std::vector<entities::ContainerId>> destinationScopeIds;
+  destinationScopeIds.reserve(spec_.swapNDestinationScope()->size());
+  for (auto& destinationScope : *spec_.swapNDestinationScope()) {
+    std::vector<entities::ContainerId> containerIds;
+    containerIds.reserve(destinationScope.size());
+    for (auto& containerName : destinationScope) {
+      auto containerId = evaluator.getProblem().containerId(containerName);
+      if (evaluator.getDynamicObjects(containerId).empty()) {
+        continue;
+      }
+      containerIds.push_back(containerId);
+    }
+
+    if (static_cast<int>(containerIds.size()) < concurrentObjects) {
+      // no valid moves possible because there are fewer containers to pick from
+      // in this scope item than the concurrency number
+      continue;
+    }
+
+    destinationScopeIds.push_back(std::move(containerIds));
+  }
+
+  if (destinationScopeIds.empty()) {
+    // no valid moves possible because there aren't any valid destination scope
+    // items to pick from
+    return MoveResult::makeEmpty();
+  }
+
+  return findBestMove(
+      evaluator, objectIdsToMove, destinationScopeIds, stats, timeLimit);
+}
+
+MoveResult SwapNMoveType::findBestMove(
+    const MovesEvaluator& evaluator,
+    const std::vector<entities::ObjectId>& objectIdsToMove,
+    const std::vector<std::vector<entities::ContainerId>>& destinationScopeIds,
+    MoveStatsAggregator& stats,
+    double timeLimit) {
+  const std::function<MoveResult(MoveSet)> evaluate = [&evaluator,
+                                                       &stats](auto moveset) {
+    auto result = evaluator.evaluate(std::move(moveset));
+    stats.add(result);
+    return result;
+  };
+
+  const std::function<MoveSet(int)> generate = [this,
+                                                &evaluator,
+                                                &objectIdsToMove,
+                                                &destinationScopeIds](
+                                                   int /* index */) {
+    const int concurrentObjects = *spec_.swapNConcurrentObjects();
+    const int scopeId = folly::Random::rand32(0, destinationScopeIds.size());
+    auto& containerIds = destinationScopeIds.at(scopeId);
+    auto indices = pickRandom(containerIds.size(), concurrentObjects);
+    std::vector<entities::ObjectId> destinationObjectIds;
+    destinationObjectIds.reserve(indices.size());
+    for (const int index : indices) {
+      auto containerId = containerIds.at(index);
+      auto& objectIds = evaluator.getDynamicObjects(containerId);
+      destinationObjectIds.push_back(*objectIds.begin());
+    }
+    MoveSet moveset;
+    for (const auto i : folly::irange(concurrentObjects)) {
+      auto object1 = objectIdsToMove.at(i);
+      auto object2 = destinationObjectIds.at(i);
+      auto container1 = evaluator.getProblem().assignment.getContainer(object1);
+      auto container2 = evaluator.getProblem().assignment.getContainer(object2);
+      moveset.insert(Move(object1, container1, container2));
+      moveset.insert(Move(object2, container2, container1));
+    }
+    return moveset;
+  };
+
+  auto moves = makeTransformContainer(
+      makeStlWrapperContainer(Range<int>(0, *spec_.swapNIterations())),
+      generate);
+
+  return MoveHelper::findBest(
+      evaluator.getProblem().configs.threadPool.get(),
+      moves,
+      evaluate,
+      timeLimit,
+      getParallelExecutionConfig());
+}
+
+PackerSet<int> SwapNMoveType::pickRandom(int n, int k) {
+  if (k > n) {
+    throw std::runtime_error(
+        fmt::format("impossible to pick {} out of {}", k, n));
+  }
+  PackerSet<int> result;
+  for ([[maybe_unused]] const auto _ : folly::irange(k)) {
+    while (true) {
+      const int r = folly::Random::rand32(0, n);
+      if (!result.contains(r)) {
+        result.insert(r);
+        break;
+      }
+    }
+  }
+  return result;
+}
+
+} // namespace facebook::rebalancer
