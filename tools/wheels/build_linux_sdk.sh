@@ -29,13 +29,6 @@ export PY=/opt/python/cp310-cp310/bin/python
 # rhel8 x86_64 exists; clang 20 is forward-compatible with our "clang19+"
 # requirement.
 dnf install -y clang lld gcc-c++
-# dnf ships patchelf 0.12 on AlmaLinux 8; upgrade to >=0.18 via PyPI.
-# Older patchelf corrupts ELF segment alignment (page-misaligned PT_LOAD)
-# when rewriting RPATH on large shared libs. 0.18+ fixes this.
-# Use $PY -m pip (not bare pip — manylinux container has no pip in PATH).
-$PY -m pip install --quiet --pre "patchelf>=0.18"
-export PATH="$(dirname "$PY"):$PATH"
-echo "patchelf version: $(patchelf --version)"
 clang_dir=$(dirname "$(command -v clang)")
 ln -sf "$clang_dir/clang"   "$clang_dir/clang-19"
 ln -sf "$clang_dir/clang++" "$clang_dir/clang++-19"
