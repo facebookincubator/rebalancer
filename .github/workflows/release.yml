@@ -130,6 +130,23 @@ jobs:
                 exit 1
                 ;;
               missing)
+                # No run for this exact SHA — the workflow was skipped by path
+                # filters (e.g. a release.yml-only commit). Fall back to the
+                # most recent successful run on main: if build-relevant files
+                # didn't change, the prior artifacts are still valid.
+                fallback=$(gh run list \
+                  --repo "${{ github.repository }}" \
+                  --workflow "$wf" \
+                  --branch main \
+                  --status success \
+                  --limit 1 \
+                  --json databaseId,url 2>/dev/null || echo '[]')
+                fb_id=$(echo "$fallback" | jq -r '.[0].databaseId // ""')
+                fb_url=$(echo "$fallback" | jq -r '.[0].url // ""')
+                if [ -n "$fb_id" ]; then
+                  echo "✅ $wf has no run for $SHA (path filter); latest success on main: $fb_url"
+                  break
+                fi
                 echo "  $wf has no run for $SHA yet; waiting..."
                 ;;
               *)
