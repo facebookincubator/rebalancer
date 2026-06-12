@@ -59,10 +59,8 @@ class MockExpression : public Expression {
   explicit MockExpression(
       std::vector<ObjectPotential> objectPotentials,
       double value = 0)
-      : Expression(std::make_shared<entities::Universe>()),
-        objectPotentials_(std::move(objectPotentials)) {
-    this->value = value;
-  }
+      : Expression(std::make_shared<entities::Universe>(), value),
+        objectPotentials_(std::move(objectPotentials)) {}
   double innerFullApply(
       const TopToBottomEvaluator& /* evaluator */,
       const Assignment& /* assignment */) override {

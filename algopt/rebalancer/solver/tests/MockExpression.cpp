@@ -29,10 +29,8 @@ MockExpression::MockExpression(
     double initialValue,
     double newValue,
     std::shared_ptr<TestContext> testContext)
-    : Expression(std::make_shared<entities::Universe>()),
+    : Expression(std::make_shared<entities::Universe>(), initialValue),
       testContext_(std::move(testContext)) {
-  value = initialValue;
-  properlyInitialized = true;
   testContext_->newValue[(Expression*)this] = newValue;
 }
 

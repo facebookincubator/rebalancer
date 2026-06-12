@@ -37,6 +37,8 @@ BoundsOverride::BoundsOverride(
     throw std::runtime_error("Must at least override 1 bound");
   }
   add_child(child);
+
+  setInitialValue(child->getInitialValue());
 }
 
 const std::string_view& BoundsOverride::getType() const {

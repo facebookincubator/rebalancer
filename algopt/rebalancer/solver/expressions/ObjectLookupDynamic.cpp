@@ -66,6 +66,8 @@ ObjectLookupDynamic::ObjectLookupDynamic(
     }
   }
   directlyAffectedContainers.set(allContainers_);
+
+  setInitialValue(sumOfObjectLookups->getInitialValue());
 }
 
 const std::string_view& ObjectLookupDynamic::getType() const {

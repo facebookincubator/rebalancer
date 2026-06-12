@@ -42,10 +42,19 @@ AnyPositive::AnyPositive(
       feasibilityTolerance(feasibilityTolerance) {
   for (const auto& expr : exprs) {
     add_child(expr);
+    if (isViolating(expr->getInitialValue())) {
+      violatingChildren_.insert(expr.get());
+    }
   }
-  if (children().size() == 0) {
-    value = 0;
-  }
+  setInitialValue(computeResult());
+}
+
+bool AnyPositive::isViolating(double childVal) const {
+  return getPrecision().compare(childVal, feasibilityTolerance) == 1;
+}
+
+double AnyPositive::computeResult() const {
+  return violatingChildren_.empty() ? 0.0 : 1.0;
 }
 
 const std::string_view& AnyPositive::getType() const {
@@ -59,6 +68,10 @@ bool AnyPositive::isAnyPositive() const {
 void AnyPositive::add(const ExprPtr& expr) {
   if (!children().contains(expr)) {
     add_child(expr);
+    if (isViolating(expr->getInitialValue())) {
+      violatingChildren_.insert(expr.get());
+    }
+    setInitialValue(computeResult());
   }
 }
 
@@ -107,14 +120,12 @@ double AnyPositive::innerFullApply(
     const TopToBottomEvaluator& evaluator,
     const Assignment& assignment) {
   violatingChildren_.clear();
-  const auto& precision = getPrecision();
-  for (auto& child : children()) {
-    const double val = evaluator.apply(child.get(), assignment);
-    if (precision.compare(val, feasibilityTolerance) == 1) {
+  for (const auto& child : children()) {
+    if (isViolating(evaluator.apply(child.get(), assignment))) {
       violatingChildren_.insert(child.get());
     }
   }
-  value = violatingChildren_.size() == 0 ? 0 : 1;
+  value = computeResult();
   return value;
 }
 
@@ -123,16 +134,14 @@ double AnyPositive::innerPartialApply(
     const Assignment& assignment,
     [[maybe_unused]] const ChangeSet& changes) {
   auto& changedChildren = evaluator.getChangedChildren((Expression*)this);
-  const auto& precision = getPrecision();
   for (auto& child : changedChildren) {
-    const double val = evaluator.apply(child, assignment);
-    if (precision.compare(val, feasibilityTolerance) == 1) {
+    if (isViolating(evaluator.apply(child, assignment))) {
       violatingChildren_.insert(child);
     } else {
       violatingChildren_.erase(child);
     }
   }
-  value = violatingChildren_.size() == 0 ? 0 : 1;
+  value = computeResult();
   return value;
 }
 

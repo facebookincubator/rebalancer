@@ -76,5 +76,9 @@ class AnyPositive : public Expression {
   virtual Bounds innerLowerAndUpperBounds(
       Context& context,
       const BoundConstraints& bc) const override;
+
+  bool isViolating(double childVal) const;
+
+  double computeResult() const;
 };
 } // namespace facebook::rebalancer
