@@ -161,7 +161,7 @@ folly::coro::Task<ExprPtr> GroupDiversitySpecBuilder::getContinuousPenaltyExpr(
         /*groupLimits=*/{},
         dimensionId,
         partitionId,
-        /*squares=*/false,
+        /*normalizeByGroupSize=*/false,
         scopeParams,
         /*filteredGroupIds=*/std::nullopt,
         /*defaultGroupCoefficient=*/1.0 / maxUtilUpperbound);

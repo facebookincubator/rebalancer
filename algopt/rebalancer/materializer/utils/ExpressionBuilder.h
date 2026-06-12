@@ -189,7 +189,7 @@ class ExpressionBuilder {
       const entities::Map<entities::GroupId, double>& groupLimits,
       entities::DimensionId dimensionId,
       entities::PartitionId partitionId,
-      bool squares,
+      bool normalizeByGroupSize,
       const std::optional<ScopeParams>& scopeParams = std::nullopt,
       std::optional<PackerSet<entities::GroupId>> filteredGroupIds =
           std::nullopt,
@@ -200,7 +200,7 @@ class ExpressionBuilder {
       const entities::Map<entities::GroupId, double>& groupLimits,
       entities::DimensionId dimensionId,
       entities::PartitionId partitionId,
-      bool squares,
+      bool normalizeByGroupSize,
       const std::optional<ScopeParams>& scopeParams,
       std::optional<PackerSet<entities::GroupId>> filteredGroupIds,
       double defaultGroupCoefficient);
@@ -677,9 +677,9 @@ class ExpressionBuilder {
       entities::Set<entities::GroupId>>
       nestedPartitionImageCache_;
 
-  // Cache for getObjectPartition(dimensionId, partitionId, squares,
-  // scopeParams, filteredGroupIds, defaultGroupCoefficient). Only caches when
-  // groupLimits is empty.
+  // Cache for getObjectPartition(dimensionId, partitionId,
+  // normalizeByGroupSize, scopeParams, filteredGroupIds,
+  // defaultGroupCoefficient). Only caches when groupLimits is empty.
   // (filteredGroupIds is hashed using commutative_hash_combine_range for cache
   // key)
   Cache<

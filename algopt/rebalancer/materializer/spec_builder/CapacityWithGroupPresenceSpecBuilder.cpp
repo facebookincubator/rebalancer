@@ -464,7 +464,7 @@ ExprPtr CapacityWithGroupPresenceSpecBuilder::
       /*groupLimits=*/{},
       dimensionId_,
       aggregationPartitionId_,
-      /*squares=*/false,
+      /*normalizeByGroupSize=*/false,
       /*scopeParams=*/std::nullopt,
       aggregationGroupIds);
 

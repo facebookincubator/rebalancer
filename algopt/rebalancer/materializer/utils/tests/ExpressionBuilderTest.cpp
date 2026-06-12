@@ -2385,9 +2385,9 @@ TEST_F(ExpressionBuilderTest, ObjectPartitionCacheHit) {
   // Create two object partitions with identical parameters
   auto& builder = expressionBuilder();
   auto expr1 = builder.getObjectPartition(
-      emptyGroupLimits, cpu(), job(), /*squares=*/false);
+      emptyGroupLimits, cpu(), job(), /*normalizeByGroupSize=*/false);
   auto expr2 = builder.getObjectPartition(
-      emptyGroupLimits, cpu(), job(), /*squares=*/false);
+      emptyGroupLimits, cpu(), job(), /*normalizeByGroupSize=*/false);
 
   // Should be the exact same pointer (cache hit)
   EXPECT_EQ(expr1.get(), expr2.get());
@@ -2418,10 +2418,10 @@ TEST_F(ExpressionBuilderTest, ObjectPartitionNonCacheable) {
 
   // Create two object partitions with non-empty groupLimits
   auto& builder = expressionBuilder();
-  auto expr1 =
-      builder.getObjectPartition(groupLimits, cpu(), job(), /*squares=*/false);
-  auto expr2 =
-      builder.getObjectPartition(groupLimits, cpu(), job(), /*squares=*/false);
+  auto expr1 = builder.getObjectPartition(
+      groupLimits, cpu(), job(), /*normalizeByGroupSize=*/false);
+  auto expr2 = builder.getObjectPartition(
+      groupLimits, cpu(), job(), /*normalizeByGroupSize=*/false);
 
   // Should be different pointers (not cached)
   EXPECT_NE(expr1.get(), expr2.get());

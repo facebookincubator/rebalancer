@@ -1073,7 +1073,7 @@ ExprPtr ExpressionBuilder::getObjectPartition(
     const entities::Map<entities::GroupId, double>& groupLimits,
     entities::DimensionId dimensionId,
     entities::PartitionId partitionId,
-    bool squares,
+    bool normalizeByGroupSize,
     const std::optional<ScopeParams>& scopeParams,
     std::optional<PackerSet<entities::GroupId>> filteredGroupIds,
     double defaultGroupCoefficient) {
@@ -1090,7 +1090,7 @@ ExprPtr ExpressionBuilder::getObjectPartition(
     const auto key = std::make_tuple(
         dimensionId,
         partitionId,
-        squares,
+        normalizeByGroupSize,
         scopeParams,
         filteredGroupIdsHash,
         defaultGroupCoefficient);
@@ -1100,7 +1100,7 @@ ExprPtr ExpressionBuilder::getObjectPartition(
           groupLimits,
           dimensionId,
           partitionId,
-          squares,
+          normalizeByGroupSize,
           scopeParams,
           std::move(filteredGroupIds),
           defaultGroupCoefficient);
@@ -1112,7 +1112,7 @@ ExprPtr ExpressionBuilder::getObjectPartition(
       groupLimits,
       dimensionId,
       partitionId,
-      squares,
+      normalizeByGroupSize,
       scopeParams,
       std::move(filteredGroupIds),
       defaultGroupCoefficient);
@@ -1122,7 +1122,7 @@ ExprPtr ExpressionBuilder::createObjectPartition(
     const entities::Map<entities::GroupId, double>& groupLimits,
     entities::DimensionId dimensionId,
     entities::PartitionId partitionId,
-    bool squares,
+    bool normalizeByGroupSize,
     const std::optional<ScopeParams>& scopeParams,
     std::optional<PackerSet<entities::GroupId>> filteredGroupIds,
     double defaultGroupCoefficient) {
@@ -1132,11 +1132,11 @@ ExprPtr ExpressionBuilder::createObjectPartition(
         "non-scalar dimensions or ObjectPartitionRoutingDimensions are not currently supported with objectPartition");
   }
 
-  /* current behavior, when squares is set, normalization coefs are set to
-   * 1/orig_groupcount */
+  /* when normalizeByGroupSize is set, each group's normalization coef is set to
+   * 1 / (number of objects in the group) */
   entities::Map<entities::GroupId, double> normalizationCoefs;
   const auto& partition = universe_->getPartition(partitionId);
-  if (squares) {
+  if (normalizeByGroupSize) {
     for (const auto& groupId : partition.getGroupIds()) {
       if (filteredGroupIds.has_value() &&
           !filteredGroupIds->contains(groupId)) {
