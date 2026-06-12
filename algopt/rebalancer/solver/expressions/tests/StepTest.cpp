@@ -35,6 +35,9 @@ TEST_F(StepTest, Lp) {
   auto var = 0.6 * variable(object(0), container(0), universe, assignment);
   auto stepExpr = step(var, universe);
 
+  // var init = 0.6 * 1 = 0.6 > 0, so step = 1.
+  EXPECT_DOUBLE_EQ(1.0, stepExpr->getInitialValue());
+
   auto p_ptr = createTestProblem(
       universe, {const_expr(0, universe)}, const_expr(0, universe));
   auto& p = *p_ptr;

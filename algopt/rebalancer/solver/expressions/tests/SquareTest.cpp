@@ -52,7 +52,8 @@ TEST_F(SquareTest, VariableBoundsTests) {
   EXPECT_EQ(8, lower_bound(*sum));
   EXPECT_EQ(11, upper_bound(*sum));
   Square square(sum, universe);
-
+  // var = 1, sum init = 11, square init = 121.
+  EXPECT_DOUBLE_EQ(121, square.getInitialValue());
   EXPECT_EQ(64, lower_bound(square));
   EXPECT_EQ(121, upper_bound(square));
 

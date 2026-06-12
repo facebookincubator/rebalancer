@@ -31,6 +31,7 @@ Power::Power(
     std::shared_ptr<const entities::Universe> universe)
     : Transform(std::move(expr), std::move(universe)) {
   exponent_ = exponent;
+  setInitialValue(perform_transform(getOnlyChildRawPtr()->getInitialValue()));
 }
 
 const std::string_view& Power::getType() const {

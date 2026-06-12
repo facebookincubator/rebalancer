@@ -96,13 +96,15 @@ TEST_F(CeilTest, NonConstant) {
       {container(1), {object(1)}},
   });
   auto expr = 2 * variable(object(1), container(0), universe, assignment) - 1.5;
-
   auto ceilExpr = ceil(expr, universe);
 
+  // expr init = 2*0 - 1.5 = -1.5, ceil(-1.5) = -1.
+  EXPECT_DOUBLE_EQ(-1, ceilExpr->getInitialValue());
   EXPECT_EQ(-1, apply(ceilExpr, assignment));
 
   EXPECT_EQ(1, evaluate(ceilExpr, {{object(1), container(0)}}, assignment));
 
   EXPECT_EQ(1, applyChanges(ceilExpr, {{object(1), container(0)}}, assignment));
 }
+
 } // namespace facebook::rebalancer::packer::tests

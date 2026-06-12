@@ -29,12 +29,16 @@ Square::Square(
     : Transform(
           std::move(expr),
           std::move(universe),
-          std::optional<ApproximationHint>{hint}) {}
+          std::optional<ApproximationHint>{hint}) {
+  setInitialValue(perform_transform(getOnlyChildRawPtr()->getInitialValue()));
+}
 
 Square::Square(
     std::shared_ptr<Expression> expr,
     std::shared_ptr<const entities::Universe> universe)
-    : Transform(std::move(expr), std::move(universe)) {}
+    : Transform(std::move(expr), std::move(universe)) {
+  setInitialValue(perform_transform(getOnlyChildRawPtr()->getInitialValue()));
+}
 
 const std::string_view& Square::getType() const {
   return type;

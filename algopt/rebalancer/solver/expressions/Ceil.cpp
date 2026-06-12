@@ -26,7 +26,9 @@ namespace facebook::rebalancer {
 Ceil::Ceil(
     std::shared_ptr<Expression> expr,
     std::shared_ptr<const entities::Universe> universe)
-    : Transform(std::move(expr), std::move(universe)) {}
+    : Transform(std::move(expr), std::move(universe)) {
+  setInitialValue(perform_transform(getOnlyChildRawPtr()->getInitialValue()));
+}
 
 const std::string_view& Ceil::getType() const {
   return type;

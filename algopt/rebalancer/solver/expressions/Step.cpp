@@ -27,7 +27,9 @@ namespace facebook::rebalancer {
 Step::Step(
     std::shared_ptr<Expression> expr,
     std::shared_ptr<const entities::Universe> universe)
-    : Transform(std::move(expr), std::move(universe)) {}
+    : Transform(std::move(expr), std::move(universe)) {
+  setInitialValue(perform_transform(getOnlyChildRawPtr()->getInitialValue()));
+}
 
 const std::string_view& Step::getType() const {
   return type;
