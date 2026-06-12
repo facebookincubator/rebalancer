@@ -191,7 +191,7 @@ jobs:
 
     - name: Download wheel artifacts (linux + macos)
       run: |
-        mkdir -p dist
+        mkdir -p dist pypi_dist
         for wf in wheels.yml sdist.yml linux-sdk.yml packaging_mac.yml; do
           run_id=$(gh run list \
             --repo "${{ github.repository }}" \
@@ -202,24 +202,23 @@ jobs:
           echo "Downloading artifacts from $wf run $run_id"
           gh run download "$run_id" --repo "${{ github.repository }}" --dir _stage
         done
-        # Flatten everything into dist/
+        # pypi_dist/ gets only Python distributions (.whl, .tar.gz) for upload.
+        # dist/ gets everything for the GitHub Release attachment.
+        find _stage -type f \( -name '*.whl' -o -name '*.tar.gz' \) \
+          -exec cp -v {} pypi_dist/ \;
         find _stage -type f \( -name '*.whl' -o -name '*.tar.gz' \
                               -o -name '*.deb' -o -name '*.rpm' \
                               -o -name '*.bottle.tar.gz' \) \
           -exec cp -v {} dist/ \;
-        ls -la dist/
+        echo "=== PyPI dist ===" && ls -la pypi_dist/
+        echo "=== Full dist ===" && ls -la dist/
 
     - name: Publish wheels + sdist to TestPyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         repository-url: https://test.pypi.org/legacy/
-        # Only ship Python distributions — leave deb/rpm/bottle on disk for
-        # the GitHub Release step.
-        packages-dir: dist
-        # Skip non-Python files in dist/
+        packages-dir: pypi_dist
         skip-existing: true
-        # gh-action-pypi-publish picks up *.whl and *.tar.gz; the deb/rpm
-        # extensions are silently ignored.
 
     - name: Create signed tag
       run: |
