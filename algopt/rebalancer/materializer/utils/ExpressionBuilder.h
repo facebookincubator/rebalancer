@@ -277,12 +277,10 @@ class ExpressionBuilder {
       entities::GroupId outerGroupId);
 
  public:
-  // Serializes access to context_ from getInitialValue() and getUpperBound().
+  // Serializes access to context_ from getUpperBound().
   // Capability-annotated so the FOLLY_TS_GUARDED_BY/REQUIRES claims below are
   // checked under -Wthread-safety on Clang.
   folly::AnnotatedMutex applyfunc;
-  // Evaluates the given expression on the initial assignment.
-  double getInitialValue(Expression& expression) FOLLY_TS_REQUIRES(!applyfunc);
   // Upper bound of the values the given expression may take.
   double getUpperBound(const Expression& expression)
       FOLLY_TS_REQUIRES(!applyfunc);
@@ -708,12 +706,12 @@ class ExpressionBuilder {
       ExprPtr>
       objectPartitionLookupCache_;
 
-  // Context for computing bounds and evaluating initial values.
-  // Accessed by getInitialValue() and getUpperBound(); guarded by applyfunc.
+  // Context for computing bounds.
+  // Accessed by getUpperBound(); guarded by applyfunc.
   Context context_ FOLLY_TS_GUARDED_BY(applyfunc);
 
-  // Initial assignment, used by getInitialValue(). Set once in the constructor
-  // and read-only thereafter; no mutex needed.
+  // Initial assignment, exposed via getInitialAssignment(). Set once in the
+  // constructor and read-only thereafter; no mutex needed.
   Assignment initialAssignment_;
 
   std::shared_ptr<algopt::treeprof::ExecutorWrapper> executor_ = nullptr;

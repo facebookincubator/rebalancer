@@ -106,10 +106,13 @@ std::optional<size_t> getTotalContainersInUniqueAndDirectlyAffectedSets(
 
 std::atomic<int64_t> next_id(0);
 
+Expression::Expression(std::shared_ptr<const entities::Universe> universe)
+    : universe_(std::move(universe)), id(next_id++) {}
+
 Expression::Expression(
     std::shared_ptr<const entities::Universe> universe,
     double initialValue)
-    : universe_(std::move(universe)), id(next_id++) {
+    : Expression(std::move(universe)) {
   setInitialValue(initialValue);
 }
 
@@ -148,8 +151,6 @@ double Expression::delta(
 double Expression::fullApply(
     const TopToBottomEvaluator& evaluator,
     const Assignment& assignment) {
-  properlyInitialized = true;
-
   // TODO: move all context caching operations to orchestrator/evaluator like it
   // is done for partialApply()
   auto& context = evaluator.getContext();

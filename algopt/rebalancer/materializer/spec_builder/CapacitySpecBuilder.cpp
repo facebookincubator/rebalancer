@@ -212,10 +212,10 @@ CapacitySpecBuilder::getConstraintsForScopeItem(
   bool isAtOrAboveDuringLimit = false;
 
   auto isDuringBrokenAndMaybeTrackViolation =
-      [this, &expressionBuilder, &isAtOrAboveDuringLimit](
+      [this, &isAtOrAboveDuringLimit](
           Expression& duringExpr,
           [[maybe_unused]] entities::ScopeItemId scopeItemId) {
-        auto duringValue = expressionBuilder.getInitialValue(duringExpr);
+        auto duringValue = duringExpr.getInitialValue();
         auto compare = universe_->getPrecision().compare(duringValue, 0);
         auto duringBelowLimit = (compare == -1);
         if (!duringBelowLimit &&

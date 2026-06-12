@@ -109,7 +109,7 @@ BalanceSpecBuilder::getTotalAbsoluteOrRelativeUtil(
   for (auto scopeItemId : scopeItemIds) {
     sumUtil += co_await getScopeItemUtil(scopeItemId);
   }
-  double initialSumUtil = expressionBuilder.getInitialValue(*sumUtil);
+  double initialSumUtil = sumUtil->getInitialValue();
 
   if (shouldFixAverageToInitial(scopeItemIds)) {
     const auto& includeInInitialAverage = *spec_.includeInInitialAverage();
@@ -129,7 +129,7 @@ BalanceSpecBuilder::getTotalAbsoluteOrRelativeUtil(
           continue;
         }
         auto util = co_await getScopeItemUtil(scopeItemId);
-        initialSumUtil += expressionBuilder.getInitialValue(*util);
+        initialSumUtil += util->getInitialValue();
       }
     }
     co_return {const_expr(initialSumUtil, universe_), scopeItemIdsSet.size()};
@@ -395,7 +395,7 @@ folly::coro::Task<ExprPtr> BalanceSpecBuilder::goalCoro(
     }
     auto [totalUtil, numScopeItems] = co_await getTotalAbsoluteOrRelativeUtil(
         metric, scopeItemIds, expressionBuilder, /*computeRelativeUtil=*/false);
-    auto initialUtil = expressionBuilder.getInitialValue(*totalUtil);
+    auto initialUtil = totalUtil->getInitialValue();
     if (universe_->getPrecision().compare(initialUtil, 0.0) == 0) {
       co_return const_expr(-upperBound, universe_);
     }

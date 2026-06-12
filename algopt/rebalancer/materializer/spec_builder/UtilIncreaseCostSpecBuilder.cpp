@@ -43,8 +43,8 @@ folly::coro::Task<ExprPtr> UtilIncreaseCostSpecBuilder::goalCoro(
   for (auto scopeItemId : remainingScopeItemIds) {
     auto util = co_await expressionBuilder.getRelativeUtil(
         UtilMetric::AFTER, dimensionId, scopeId, scopeItemId);
-    auto limit = expressionBuilder.getInitialValue(
-        *transform(max({const_expr(lb, universe_), util}, universe_)));
+    auto limit = transform(max({const_expr(lb, universe_), util}, universe_))
+                     ->getInitialValue();
     goalExpr +=
         max({const_expr(0, universe_), transform(util) - limit}, universe_) /
         remainingScopeItemIds.size();

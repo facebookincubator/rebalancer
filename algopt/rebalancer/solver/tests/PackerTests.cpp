@@ -841,7 +841,7 @@ CO_TEST_F(PackerTests, ObjPartitionLookupBrokenConstraint) {
 
   auto loosened_constraint =
       std::dynamic_pointer_cast<ObjectPartitionLookupDefault>(
-          constraint->get_do_not_make_worse_copy());
+          constraint->get_do_not_make_worse_copy(assignment));
   loosened_constraint->fullApply(TopToBottomEvaluator(ctx), assignment);
   // loosened constraint has zero penalty
   auto loosened_problem = createTestProblem(

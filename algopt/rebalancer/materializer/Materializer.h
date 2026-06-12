@@ -76,15 +76,14 @@ class Materializer {
 
   static ExprPtr getViolationBeyondInitial(
       ExprPtr constraint,
-      double initialValue);
+      double initialValue,
+      const Assignment& initialAssignment);
 
   entities::Map<entities::ObjectId, entities::ContainerId>
   getUpdatesInInitialAssignment();
 
   std::optional<std::vector<std::vector<entities::ContainerId>>>
   getSimilarContainers();
-
-  void initializeExpressions(ExpressionBuilder& expressionBuilder);
 
   void buildLabeledConstraints();
 

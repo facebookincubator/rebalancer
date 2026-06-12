@@ -68,10 +68,14 @@ class UniqueAffectedContainersInSubgraph : public ContainerSetWithHash {};
 
 class Expression {
  public:
-  // TODO: Remove the default value of 0 once all expressions pass initialValue
-  explicit Expression(
+  Expression(
       std::shared_ptr<const entities::Universe> universe,
-      double initialValue = 0);
+      double initialValue);
+
+  // For subclasses whose initial value depends on members set after the base
+  // ctor runs. The subclass MUST call `setInitialValue(...)` in its ctor
+  // body; otherwise `partialApply()` throws at first use.
+  explicit Expression(std::shared_ptr<const entities::Universe> universe);
 
   // Called after children are initialized
   void add_child(std::shared_ptr<Expression> expr);
@@ -245,7 +249,7 @@ class Expression {
     return children_;
   }
 
-  double value;
+  double value = 0.0;
 
   inline const Bounds& getUnconstrainedBounds() const {
     auto rLockedUnconstrainedBounds = unconstrainedBounds.rlock();
@@ -299,16 +303,13 @@ class Expression {
 
   virtual bool shouldComputeDescendingChildPotentials() const;
 
-  // An Expression is properly initialized if it has been subject to at
-  // least one full_apply---i.e., it's value has been correctly calculated
-  // against an assignment. Having this flag as 'true' implies it is safe to
-  // proceed to doing partial applies--i.e., ones were we only look at
-  // changes to the current assignment
+  // True once `setInitialValue()` has been called. Must be set before
+  // `partialApply()` runs; otherwise `partialApply()` throws.
   bool properlyInitialized = false;
 
   void setInitialValue(double v);
 
-  double initialValue_;
+  double initialValue_ = 0.0;
   void throwIfNotProperlyInitialized() const;
 
   // Rounds a value within precision tolerance of zero to exactly 0.

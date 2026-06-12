@@ -75,7 +75,8 @@ class ObjectPartitionLookup : public Expression {
   std::vector<std::pair<Expression*, double>> get_sorted_children(
       bool) const override;
 
-  std::shared_ptr<Expression> get_do_not_make_worse_copy() const;
+  std::shared_ptr<Expression> get_do_not_make_worse_copy(
+      const Assignment& initialAssignment) const;
 
   ExpressionProperties getProperties() const override;
 

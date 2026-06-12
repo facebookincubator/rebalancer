@@ -1441,7 +1441,7 @@ CO_TEST_F(ExpressionBuilderTest, InitialValue) {
   auto& builder = expressionBuilder();
   auto host0 = co_await builder.getAbsoluteUtil(
       UtilMetric::AFTER, cpu(), host(), host(0));
-  EXPECT_NEAR(0.1, builder.getInitialValue(*host0), 1e-8);
+  EXPECT_NEAR(0.1, host0->getInitialValue(), 1e-8);
 }
 
 TEST_F(ExpressionBuilderTest, ObjectPartitionLookup) {

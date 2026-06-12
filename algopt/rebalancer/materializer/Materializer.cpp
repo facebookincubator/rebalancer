@@ -152,8 +152,6 @@ std::shared_ptr<MaterializedProblem> Materializer::materialize() {
   // important for collectFixedContainers to be invoked after.
   collectFixedContainers();
 
-  initializeExpressions(expressionBuilder);
-
   buildLabeledConstraints();
 
   buildGlobalObjectiveAndLabeledObjectives();
@@ -315,15 +313,16 @@ SplitConstraint Materializer::splitConstraintComponent(
   auto& constraintExpr = constraintInfo.constraintExpr;
   switch (constraint.getPolicy()) {
     case ConstraintPolicy::DEFAULT: {
-      const double initialValue =
-          expressionBuilder.getInitialValue(*constraintExpr);
+      const double initialValue = constraintExpr->getInitialValue();
       const bool initiallyBroken =
           universe->getPrecision().compare(initialValue, 0) == 1;
       return !initiallyBroken
           ? SplitConstraint{.hardComponent = constraintExpr, .softComponent = nullptr}
           : SplitConstraint{
-                .hardComponent =
-                    getViolationBeyondInitial(constraintExpr, initialValue),
+                .hardComponent = getViolationBeyondInitial(
+                    constraintExpr,
+                    initialValue,
+                    expressionBuilder.getInitialAssignment()),
                 .softComponent = getSoftenedConstraint(
                     constraintInfo, constraint, std::move(universe))};
     }
@@ -408,13 +407,14 @@ ExprPtr Materializer::getSoftenedConstraint(
 
 ExprPtr Materializer::getViolationBeyondInitial(
     ExprPtr constraint,
-    double initialValue) {
+    double initialValue,
+    const Assignment& initialAssignment) {
   // ObjectPartitionLookup requires complex handling in order to treat groups
   // independently as they are all conflated under the same expression.
   auto objectPartitionLookup =
       std::dynamic_pointer_cast<ObjectPartitionLookupDefault>(constraint);
   if (objectPartitionLookup != nullptr) {
-    return objectPartitionLookup->get_do_not_make_worse_copy();
+    return objectPartitionLookup->get_do_not_make_worse_copy(initialAssignment);
   }
 
   return std::move(constraint) - initialValue;
@@ -423,58 +423,6 @@ ExprPtr Materializer::getViolationBeyondInitial(
 std::optional<std::vector<std::vector<ContainerId>>>
 Materializer::getSimilarContainers() {
   return universe_->getSimilarContainers();
-}
-
-void Materializer::initializeExpressions(ExpressionBuilder& expressionBuilder) {
-  // The getInitialValue method has the side effect of initializing the given
-  // expression. We abuse this fact here to initialize all expressions while
-  // re-using the internal Context of ExpressionBuilder.
-  // TODO: make this more obvious by moving the Context on layer up.
-  const algopt::treeprof::EventRecorder initExpr("Initialize all expressions");
-  algopt::treeprof::EventRecorder initUserGoals("Initialize user goals");
-
-  auto rlockedMaterialized = materialized_.rlock();
-  for (auto& [goalId, expr] : rlockedMaterialized->userGoals) {
-    const algopt::treeprof::EventRecorder initGoal(
-        fmt::format("{}", universe_->getEntityName(goalId)));
-    expressionBuilder.getInitialValue(*expr);
-  }
-  initUserGoals.stop();
-
-  algopt::treeprof::EventRecorder initUserCtr("Initialize user constraints");
-  for (auto& [constraintId, expr] : rlockedMaterialized->userConstraints) {
-    const algopt::treeprof::EventRecorder initCtr(
-        fmt::format("{}", universe_->getEntityName(constraintId)));
-    expressionBuilder.getInitialValue(*expr);
-  }
-  initUserCtr.stop();
-
-  algopt::treeprof::EventRecorder initFinalGoal("Initialize final goal");
-  for (auto& expr : rlockedMaterialized->finalGoals) {
-    expressionBuilder.getInitialValue(*expr);
-  }
-  initFinalGoal.stop();
-
-  algopt::treeprof::EventRecorder initFinalCtr("Initialize final constraint");
-  expressionBuilder.getInitialValue(*rlockedMaterialized->finalConstraint);
-  initFinalCtr.stop();
-
-  algopt::treeprof::EventRecorder initUserCtrSum(
-      "Initialize user constraint sum");
-  expressionBuilder.getInitialValue(*rlockedMaterialized->userConstraintSum);
-  initUserCtrSum.stop();
-
-  algopt::treeprof::EventRecorder initSoftCtr("Initialize soft constraints");
-  for (auto& [_, expr] : rlockedMaterialized->softConstraints) {
-    expressionBuilder.getInitialValue(*expr);
-  }
-  initSoftCtr.stop();
-
-  algopt::treeprof::EventRecorder initHardCtr("Initialize hard constraints");
-  for (auto& [_, expr] : rlockedMaterialized->hardConstraints) {
-    expressionBuilder.getInitialValue(*expr);
-  }
-  initHardCtr.stop();
 }
 
 void Materializer::buildLabeledConstraints() {

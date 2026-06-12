@@ -72,7 +72,7 @@ ExclusiveGroupsSpecBuilder::computeScopeItemToGroupAssignment(
           partitionId,
           groupId);
 
-      const double footprint = expressionBuilder.getInitialValue(*utilForGroup);
+      const double footprint = utilForGroup->getInitialValue();
       groupScopeItemFootprint[universe_->getEntityName(groupId)]
                              [universe_->getEntityName(scopeItemId)] =
                                  footprint;

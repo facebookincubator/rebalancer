@@ -781,7 +781,8 @@ bool ObjectPartitionLookup<Policy>::shouldComputeDescendingChildPotentials()
 }
 
 template <typename Policy>
-ExprPtr ObjectPartitionLookup<Policy>::get_do_not_make_worse_copy() const {
+ExprPtr ObjectPartitionLookup<Policy>::get_do_not_make_worse_copy(
+    const Assignment& initialAssignment) const {
   // copy current groupLimitOverrides_, and update ones where group count is
   // above the limit.
   // TODO This is too loose for groupsAllowed_ == 0, i.e. we are leaving valid
@@ -817,15 +818,13 @@ ExprPtr ObjectPartitionLookup<Policy>::get_do_not_make_worse_copy() const {
       newGroupLimitOverrides[groupId] = groupWeight;
     }
   }
-  const Assignment lpAssignment(
-      getUniverse().getContainers().getInitialAssignment());
   return object_partition_lookup(
       *children().begin(),
       lookupContainersPtr_,
       scopeId_,
       scopeItemId_,
       getUniversePtr(),
-      lpAssignment,
+      initialAssignment,
       std::move(newGroupLimitOverrides),
       initialDuringObjects_,
       defaultGroupLimitOverride_,

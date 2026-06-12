@@ -272,7 +272,7 @@ LargeShardSpecBuilder::computeRawDrainMetric(
     ScopeItemId scopeItemId) const {
   auto initialUtilExpr = co_await expressionBuilder.getAbsoluteUtil(
       UtilMetric::INITIAL, dimensionId_, scopeId_, scopeItemId);
-  auto initialUtil = expressionBuilder.getInitialValue(*initialUtilExpr);
+  auto initialUtil = initialUtilExpr->getInitialValue();
   auto availableCapacity = std::max(0.0, scopeItemCapacity - initialUtil);
   auto amountOfDrainRequired =
       std::max(0.0, candidateLargeShardSize - availableCapacity);

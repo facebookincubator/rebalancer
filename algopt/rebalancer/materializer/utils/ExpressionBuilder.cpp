@@ -22,7 +22,6 @@
 #include "algopt/rebalancer/solver/expressions/GroupRoutingTrafficLookup.h"
 #include "algopt/rebalancer/solver/expressions/ObjectPartitionLookup.h"
 #include "algopt/rebalancer/solver/expressions/Operators.h"
-#include "algopt/rebalancer/solver/expressions/TopToBottomEvaluator.h"
 
 #include <folly/container/irange.h>
 #include <folly/container/MapUtil.h>
@@ -268,18 +267,6 @@ double ExpressionBuilder::getUpperBound(const Expression& expression) {
   return expression.lowerAndUpperBounds(context_).upper_bound;
 }
 
-double ExpressionBuilder::getInitialValue(Expression& expression) {
-  // TODO(T138533053): This logic prevents multiple threads from calling apply()
-  // concurrently,
-  // but it is extremely fragile because it assumes all apply() calls are done
-  // through this function. Completely remove getInitialValue() in favor of
-  // ExpressionBuilder returning all expressions pre-initialized, removing the
-  // need for callers to initialize them.
-  const folly::AnnotatedLockGuard lock(applyfunc);
-  return expression.fullApply(
-      TopToBottomEvaluator(context_), initialAssignment_);
-}
-
 folly::coro::Task<ExprPtr> ExpressionBuilder::getAbsoluteUtil(
     UtilMetric metric,
     Descriptor descriptor) FOLLY_TS_REQUIRES(!applyfunc) {
@@ -343,7 +330,7 @@ ExprPtr ExpressionBuilder::maybeApplyBoundsOverrideForDuringExpr(
   if (dimension.hasNegativeValues()) {
     return duringExpr;
   } else {
-    const auto duringLb = getInitialValue(*duringExpr);
+    const auto duringLb = duringExpr->getInitialValue();
     return boundsOverride(
         std::move(duringExpr), duringLb, /*ub=*/std::nullopt, universe_);
   }
@@ -392,7 +379,7 @@ folly::coro::Task<ExprPtr> ExpressionBuilder::getAbsoluteUtil(
     auto groupUtil = totalFractionOfTrafficToScopeItem * groupValue;
     if (metric == UtilMetric::DURING) {
       const auto initialFractionOfTrafficToScopeItem =
-          getInitialValue(*totalFractionOfTrafficToScopeItem);
+          totalFractionOfTrafficToScopeItem->getInitialValue();
       const auto initialGroupUtil =
           initialFractionOfTrafficToScopeItem * groupValue;
       groupUtil = max(groupUtil, initialGroupUtil, universe_);

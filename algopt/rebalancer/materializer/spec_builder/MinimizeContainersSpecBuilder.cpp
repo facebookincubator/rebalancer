@@ -240,7 +240,7 @@ MinimizeContainersSpecBuilder::getMinimizeContainerLegacyFormulaExpr(
   for (auto scopeItemId : filteredScopeItemIds) {
     auto sum = co_await expressionBuilder.getRelativeUtil(
         UtilMetric::AFTER, dimensionId_, scopeId_, scopeItemId);
-    dimensionSum += expressionBuilder.getInitialValue(*sum);
+    dimensionSum += sum->getInitialValue();
   }
 
   auto result = const_expr(0, universe_);
