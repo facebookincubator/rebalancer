@@ -71,11 +71,11 @@ jobs:
       with:
         python-version: '3.12'
     - run: pip install packaging
-    # lint-version.py is intentionally not run here. It is already a required
-    # CI gate (lint-version.yml in REQUIRED_WORKFLOWS), so by the time the
-    # release runs the version string has been validated. Running it again
-    # would check TestPyPI and hard-fail if a prior partial upload left any
-    # files there — blocking legitimate retries.
+    - name: Lint version.txt
+      # --skip-index-check: the pre-flight step in publish owns the
+      # already-on-TestPyPI check; skipping it here avoids a permanent block
+      # after a partial upload when release is triggered via workflow_dispatch.
+      run: python3 tools/lint-version.py --skip-index-check
     - name: Check version against latest release
       id: read
       run: |
