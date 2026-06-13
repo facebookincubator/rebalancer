@@ -71,8 +71,11 @@ jobs:
       with:
         python-version: '3.12'
     - run: pip install packaging
-    - name: Lint version.txt
-      run: python3 tools/lint-version.py
+    # lint-version.py is intentionally not run here. It is already a required
+    # CI gate (lint-version.yml in REQUIRED_WORKFLOWS), so by the time the
+    # release runs the version string has been validated. Running it again
+    # would check TestPyPI and hard-fail if a prior partial upload left any
+    # files there — blocking legitimate retries.
     - name: Check version against latest release
       id: read
       run: |
@@ -193,6 +196,35 @@ jobs:
           -exec cp -v {} dist/ \;
         echo "=== PyPI dist ===" && ls -la pypi_dist/
         echo "=== Full dist ===" && ls -la dist/
+
+    # Validate every file before touching PyPI. PyPI has no atomic upload
+    # API — files land one at a time with no rollback — so a rejection
+    # mid-upload leaves a partial release that blocks future retries via the
+    # version-already-exists check. Running twine check + a size gate here
+    # means we abort before uploading anything if any file would be rejected,
+    # keeping the index clean. The 100 MB ceiling matches PyPI's per-file
+    # limit (test.pypi.org enforces the same limit).
+    - name: Pre-flight check PyPI distributions
+      run: |
+        pip install --quiet twine
+        echo "=== size check (limit: 100 MB per file) ==="
+        python3 - <<'PYEOF'
+        import os, sys
+        limit = 100 * 1024 * 1024
+        bad = [
+            (f, sz)
+            for f in os.listdir("pypi_dist")
+            for sz in [os.path.getsize(os.path.join("pypi_dist", f))]
+            if sz > limit
+        ]
+        for f, sz in bad:
+            print(f"::error::pypi_dist/{f} is {sz/1e6:.1f} MB — exceeds PyPI 100 MB per-file limit")
+        if bad:
+            sys.exit(1)
+        print(f"All {len(os.listdir('pypi_dist'))} files are under 100 MB.")
+        PYEOF
+        echo "=== twine check ==="
+        twine check --strict pypi_dist/*
 
     - name: Publish wheels + sdist to TestPyPI
       uses: pypa/gh-action-pypi-publish@release/v1
