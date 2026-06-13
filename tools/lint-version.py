@@ -153,7 +153,7 @@ def _published_versions(url: str) -> set[str]:
         raise
 
 
-def main() -> None:
+def main(skip_index_check: bool = False) -> None:
     raw = VERSION_FILE.read_text().strip()
     v = validate_version_string(raw)
 
@@ -179,9 +179,12 @@ def main() -> None:
                 f"version.txt ({v}) is not greater than latest tag ({latest})"
             )
 
-    for url in INDEX_URLS:
-        if raw in _published_versions(url):
-            raise VersionError(f"version {raw} already published at {url}")
+    if skip_index_check:
+        print("lint-version: skipping index check (--skip-index-check)")
+    else:
+        for url in INDEX_URLS:
+            if raw in _published_versions(url):
+                raise VersionError(f"version {raw} already published at {url}")
 
     print(f"lint-version: OK: {raw}")
 
@@ -252,4 +255,17 @@ class PublishedVersionsTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--skip-index-check",
+        action="store_true",
+        help=(
+            "Skip the PyPI/TestPyPI already-published check. Use in the release "
+            "workflow where the pre-flight step owns this check and a prior partial "
+            "upload would otherwise block the run permanently."
+        ),
+    )
+    args = parser.parse_args()
+    main(skip_index_check=args.skip_index_check)

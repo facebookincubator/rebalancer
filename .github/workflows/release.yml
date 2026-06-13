@@ -72,7 +72,10 @@ jobs:
         python-version: '3.12'
     - run: pip install packaging
     - name: Lint version.txt
-      run: python3 tools/lint-version.py
+      # --skip-index-check: the pre-flight step in publish owns the
+      # already-on-TestPyPI check; skipping it here avoids a permanent block
+      # after a partial upload when release is triggered via workflow_dispatch.
+      run: python3 tools/lint-version.py --skip-index-check
     - name: Check version against latest release
       id: read
       run: |
@@ -194,12 +197,55 @@ jobs:
         echo "=== PyPI dist ===" && ls -la pypi_dist/
         echo "=== Full dist ===" && ls -la dist/
 
+    # Validate every file before touching PyPI. PyPI has no atomic upload
+    # API — files land one at a time with no rollback — so any rejection
+    # mid-upload leaves a partial release on the index. We treat a partial
+    # upload as unrecoverable: skip-existing is intentionally NOT set on the
+    # publish step below, so a re-run after a partial upload will fail rather
+    # than silently completing a mismatched set of files. The operator must
+    # either bump the version or yank the partial release before retrying.
+    # This pre-flight catches the common rejection causes before any upload:
+    #   - size: PyPI rejects files > 100 MB (test.pypi.org same limit)
+    #   - existing: abort if this version is already (partially) on TestPyPI
+    #   - metadata: twine check catches malformed wheels/sdists
+    - name: Pre-flight check PyPI distributions
+      run: |
+        pip install --quiet twine requests
+        echo "=== size check (limit: 100 MB per file) ==="
+        python3 - <<'PYEOF'
+        import os, sys, requests
+
+        limit = 100 * 1024 * 1024
+        bad = [
+            (f, sz)
+            for f in os.listdir("pypi_dist")
+            for sz in [os.path.getsize(os.path.join("pypi_dist", f))]
+            if sz > limit
+        ]
+        for f, sz in bad:
+            print(f"::error::pypi_dist/{f} is {sz/1e6:.1f} MB — exceeds PyPI 100 MB per-file limit")
+        if bad:
+            sys.exit(1)
+        print(f"All {len(os.listdir('pypi_dist'))} files are under 100 MB.")
+
+        version = os.environ["VERSION"]
+        url = f"https://test.pypi.org/pypi/rebalancer/{version}/json"
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            existing = sorted(r.json()["urls"][i]["filename"] for i in range(len(r.json()["urls"])))
+            print(f"::error::v{version} already has files on TestPyPI: {existing}")
+            print("::error::Bump the version or yank the partial release before retrying.")
+            sys.exit(1)
+        print(f"v{version} not yet on TestPyPI — safe to upload.")
+        PYEOF
+        echo "=== twine check ==="
+        twine check --strict pypi_dist/*
+
     - name: Publish wheels + sdist to TestPyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         repository-url: https://test.pypi.org/legacy/
         packages-dir: pypi_dist
-        skip-existing: true
 
     - name: Create signed tag
       run: |
