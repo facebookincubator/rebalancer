@@ -148,7 +148,7 @@ jobs:
         done
 
         if [ -z "$qualifying_sha" ]; then
-          echo "::error::No qualifying SHA found in [base_sha..HEAD] — re-trigger after all required workflows pass at a single commit"
+          echo "::error::No qualifying SHA found in [${base_sha}..HEAD] — re-trigger after all required workflows pass at a single commit"
           exit 1
         fi
         echo "qualifying_sha=$qualifying_sha" >> "$GITHUB_OUTPUT"
