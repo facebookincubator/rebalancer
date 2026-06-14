@@ -98,7 +98,7 @@ jobs:
     needs: validate
     if: needs.validate.outputs.skip == 'false'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 90
     outputs:
       qualifying_sha: ${{ steps.scan.outputs.qualifying_sha }}
     env:
@@ -121,39 +121,79 @@ jobs:
         fi
         echo "base_sha=$base_sha"
 
-        # All commits from base_sha through HEAD, oldest first.
-        mapfile -t commits < <(git log --reverse --format=%H "${base_sha}^..HEAD")
-        echo "Scanning ${#commits[@]} commits (oldest first)"
+        # HEAD is the commit that triggered this release run. On a fresh version
+        # bump its sibling workflows may still be running, so we retry the scan
+        # until they settle or the job times out.
+        head_sha=$(git rev-parse HEAD)
+        deadline=$(( $(date +%s) + 80 * 60 ))  # 80 min; job timeout is 90 min
 
-        qualifying_sha=""
-        for sha in "${commits[@]}"; do
-          all_pass=true
+        while true; do
+          # All commits from base_sha through HEAD, oldest first.
+          mapfile -t commits < <(git log --reverse --format=%H "${base_sha}^..HEAD")
+          echo "Scanning ${#commits[@]} commits (oldest first)"
+
+          qualifying_sha=""
+          for sha in "${commits[@]}"; do
+            all_pass=true
+            for wf in $REQUIRED_WORKFLOWS; do
+              run_json=$(gh run list \
+                --repo "${{ github.repository }}" \
+                --workflow "$wf" \
+                --commit "$sha" \
+                --limit 1 \
+                --json status,conclusion 2>/dev/null || echo '[]')
+              status=$(echo "$run_json"     | jq -r '.[0].status     // "missing"')
+              conclusion=$(echo "$run_json" | jq -r '.[0].conclusion // ""')
+              if [ "$status" != "completed" ] || [ "$conclusion" != "success" ]; then
+                echo "  $sha: $wf not qualifying (status=$status conclusion=$conclusion)"
+                all_pass=false
+                break
+              fi
+            done
+            if [ "$all_pass" = "true" ]; then
+              qualifying_sha="$sha"
+              echo "✅ Qualifying SHA: $sha"
+              break
+            fi
+          done
+
+          [ -n "$qualifying_sha" ] && break
+
+          # No qualifying SHA yet. Check whether any required workflow on HEAD is
+          # still pending (in_progress, queued, or not yet triggered). If so, wait
+          # and retry — this handles the common case where the release fires before
+          # sibling CI workflows finish on a fresh version-bump commit. If all are
+          # already completed and nothing qualifies, there is no point waiting.
+          if [ "$(date +%s)" -ge "$deadline" ]; then
+            echo "::error::Timed out after 80 min — no qualifying SHA found in [${base_sha}..HEAD]"
+            exit 1
+          fi
+
+          any_pending=false
           for wf in $REQUIRED_WORKFLOWS; do
             run_json=$(gh run list \
               --repo "${{ github.repository }}" \
               --workflow "$wf" \
-              --commit "$sha" \
+              --commit "$head_sha" \
               --limit 1 \
-              --json status,conclusion 2>/dev/null || echo '[]')
-            status=$(echo "$run_json"     | jq -r '.[0].status     // "missing"')
-            conclusion=$(echo "$run_json" | jq -r '.[0].conclusion // ""')
-            if [ "$status" != "completed" ] || [ "$conclusion" != "success" ]; then
-              echo "  $sha: $wf not qualifying (status=$status conclusion=$conclusion)"
-              all_pass=false
+              --json status 2>/dev/null || echo '[]')
+            status=$(echo "$run_json" | jq -r '.[0].status // "missing"')
+            if [ "$status" != "completed" ]; then
+              echo "  $wf is $status on HEAD — will retry"
+              any_pending=true
               break
             fi
           done
-          if [ "$all_pass" = "true" ]; then
-            qualifying_sha="$sha"
-            echo "✅ Qualifying SHA: $sha"
-            break
+
+          if [ "$any_pending" = "false" ]; then
+            echo "::error::All workflows on HEAD completed but no qualifying SHA found in [${base_sha}..HEAD]"
+            exit 1
           fi
+
+          echo "Waiting 60s for pending workflows to complete..."
+          sleep 60
         done
 
-        if [ -z "$qualifying_sha" ]; then
-          echo "::error::No qualifying SHA found in [${base_sha}..HEAD] — re-trigger after all required workflows pass at a single commit"
-          exit 1
-        fi
         echo "qualifying_sha=$qualifying_sha" >> "$GITHUB_OUTPUT"
   publish:
     needs: [validate, find-release-sha]
