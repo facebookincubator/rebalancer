@@ -98,7 +98,7 @@ jobs:
     needs: validate
     if: needs.validate.outputs.skip == 'false'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 90
     outputs:
       qualifying_sha: ${{ steps.scan.outputs.qualifying_sha }}
     env:
@@ -121,41 +121,81 @@ jobs:
         fi
         echo "base_sha=$base_sha"
 
-        # All commits from base_sha through HEAD, oldest first.
-        mapfile -t commits < <(git log --reverse --format=%H "${base_sha}^..HEAD")
-        echo "Scanning ${#commits[@]} commits (oldest first)"
+        # HEAD is the commit that triggered this release run. On a fresh version
+        # bump its sibling workflows may still be running, so we retry the scan
+        # until they settle or the job times out.
+        head_sha=$(git rev-parse HEAD)
+        deadline=$(( $(date +%s) + 80 * 60 ))  # 80 min; job timeout is 90 min
 
-        qualifying_sha=""
-        for sha in "${commits[@]}"; do
-          all_pass=true
+        while true; do
+          # All commits from base_sha through HEAD, oldest first.
+          mapfile -t commits < <(git log --reverse --format=%H "${base_sha}^..HEAD")
+          echo "Scanning ${#commits[@]} commits (oldest first)"
+
+          qualifying_sha=""
+          for sha in "${commits[@]}"; do
+            all_pass=true
+            for wf in $REQUIRED_WORKFLOWS; do
+              run_json=$(gh run list \
+                --repo "${{ github.repository }}" \
+                --workflow "$wf" \
+                --commit "$sha" \
+                --limit 1 \
+                --json status,conclusion 2>/dev/null || echo '[]')
+              status=$(echo "$run_json"     | jq -r '.[0].status     // "missing"')
+              conclusion=$(echo "$run_json" | jq -r '.[0].conclusion // ""')
+              if [ "$status" != "completed" ] || [ "$conclusion" != "success" ]; then
+                echo "  $sha: $wf not qualifying (status=$status conclusion=$conclusion)"
+                all_pass=false
+                break
+              fi
+            done
+            if [ "$all_pass" = "true" ]; then
+              qualifying_sha="$sha"
+              echo "✅ Qualifying SHA: $sha"
+              break
+            fi
+          done
+
+          [ -n "$qualifying_sha" ] && break
+
+          # No qualifying SHA yet. Check whether any required workflow on HEAD is
+          # still pending (in_progress, queued, or not yet triggered). If so, wait
+          # and retry — this handles the common case where the release fires before
+          # sibling CI workflows finish on a fresh version-bump commit. If all are
+          # already completed and nothing qualifies, there is no point waiting.
+          if [ "$(date +%s)" -ge "$deadline" ]; then
+            echo "::error::Timed out after 80 min — no qualifying SHA found in [${base_sha}..HEAD]"
+            exit 1
+          fi
+
+          any_pending=false
           for wf in $REQUIRED_WORKFLOWS; do
             run_json=$(gh run list \
               --repo "${{ github.repository }}" \
               --workflow "$wf" \
-              --commit "$sha" \
+              --commit "$head_sha" \
               --limit 1 \
-              --json status,conclusion 2>/dev/null || echo '[]')
-            status=$(echo "$run_json"     | jq -r '.[0].status     // "missing"')
-            conclusion=$(echo "$run_json" | jq -r '.[0].conclusion // ""')
-            if [ "$status" != "completed" ] || [ "$conclusion" != "success" ]; then
-              echo "  $sha: $wf not qualifying (status=$status conclusion=$conclusion)"
-              all_pass=false
+              --json status 2>/dev/null || echo '[]')
+            status=$(echo "$run_json" | jq -r '.[0].status // "missing"')
+            if [ "$status" != "completed" ]; then
+              echo "  $wf is $status on HEAD — will retry"
+              any_pending=true
               break
             fi
           done
-          if [ "$all_pass" = "true" ]; then
-            qualifying_sha="$sha"
-            echo "✅ Qualifying SHA: $sha"
-            break
+
+          if [ "$any_pending" = "false" ]; then
+            echo "::error::All workflows on HEAD completed but no qualifying SHA found in [${base_sha}..HEAD]"
+            exit 1
           fi
+
+          echo "Waiting 60s for pending workflows to complete..."
+          sleep 60
         done
 
-        if [ -z "$qualifying_sha" ]; then
-          echo "::error::No qualifying SHA found in [${base_sha}..HEAD] — re-trigger after all required workflows pass at a single commit"
-          exit 1
-        fi
         echo "qualifying_sha=$qualifying_sha" >> "$GITHUB_OUTPUT"
-  publish:
+  publish-testpypi:
     needs: [validate, find-release-sha]
     if: needs.validate.outputs.skip == 'false'
     runs-on: ubuntu-latest
@@ -173,7 +213,7 @@ jobs:
 
     - name: Download wheel artifacts (linux + macos)
       run: |
-        mkdir -p dist pypi_dist
+        mkdir -p pypi_dist
         for wf in wheels.yml sdist.yml linux-sdk.yml packaging_mac.yml; do
           run_id=$(gh run list \
             --repo "${{ github.repository }}" \
@@ -186,25 +226,18 @@ jobs:
         done
         # pypi_dist/ gets only Python distributions (.whl, sdist .tar.gz) for upload.
         # Homebrew bottles (*.bottle.tar.gz) are excluded — they are not valid PyPI dists.
-        # dist/ gets everything for the GitHub Release attachment.
         find _stage -type f -name '*.whl' -exec cp -v {} pypi_dist/ \;
         find _stage -type f -name '*.tar.gz' ! -name '*.bottle.tar.gz' \
           -exec cp -v {} pypi_dist/ \;
-        find _stage -type f \( -name '*.whl' -o -name '*.tar.gz' \
-                              -o -name '*.deb' -o -name '*.rpm' \
-                              -o -name '*.bottle.tar.gz' \) \
-          -exec cp -v {} dist/ \;
         echo "=== PyPI dist ===" && ls -la pypi_dist/
-        echo "=== Full dist ===" && ls -la dist/
 
-    # Validate every file before touching PyPI. PyPI has no atomic upload
-    # API — files land one at a time with no rollback — so any rejection
-    # mid-upload leaves a partial release on the index. We treat a partial
-    # upload as unrecoverable: skip-existing is intentionally NOT set on the
-    # publish step below, so a re-run after a partial upload will fail rather
-    # than silently completing a mismatched set of files. The operator must
-    # either bump the version or yank the partial release before retrying.
-    # This pre-flight catches the common rejection causes before any upload:
+    # Validate every file before touching either index. PyPI has no atomic
+    # upload API — files land one at a time with no rollback — so any
+    # rejection mid-upload leaves a partial release on the index. We treat a
+    # partial upload as unrecoverable: skip-existing is intentionally NOT set,
+    # so a re-run after a partial upload will fail rather than silently
+    # completing a mismatched set. The operator must bump the version or yank
+    # the partial release before retrying. Checks:
     #   - size: PyPI rejects files > 100 MB (test.pypi.org same limit)
     #   - existing: abort if this version is already (partially) on TestPyPI
     #   - metadata: twine check catches malformed wheels/sdists
@@ -229,14 +262,17 @@ jobs:
         print(f"All {len(os.listdir('pypi_dist'))} files are under 100 MB.")
 
         version = os.environ["VERSION"]
-        url = f"https://test.pypi.org/pypi/rebalancer/{version}/json"
-        r = requests.get(url, timeout=10)
-        if r.status_code == 200:
-            existing = sorted(r.json()["urls"][i]["filename"] for i in range(len(r.json()["urls"])))
-            print(f"::error::v{version} already has files on TestPyPI: {existing}")
-            print("::error::Bump the version or yank the partial release before retrying.")
-            sys.exit(1)
-        print(f"v{version} not yet on TestPyPI — safe to upload.")
+        for index, label in [
+            (f"https://test.pypi.org/pypi/rebalancer/{version}/json", "TestPyPI"),
+            (f"https://pypi.org/pypi/rebalancer/{version}/json", "PyPI"),
+        ]:
+            r = requests.get(index, timeout=10)
+            if r.status_code == 200:
+                existing = sorted(u["filename"] for u in r.json()["urls"])
+                print(f"::error::v{version} already has files on {label}: {existing}")
+                print("::error::Bump the version or yank the partial release before retrying.")
+                sys.exit(1)
+            print(f"v{version} not yet on {label} — safe to upload.")
         PYEOF
         echo "=== twine check ==="
         twine check --strict pypi_dist/*
@@ -245,6 +281,50 @@ jobs:
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         repository-url: https://test.pypi.org/legacy/
+        packages-dir: pypi_dist
+
+  publish-pypi:
+    needs: [validate, find-release-sha, publish-testpypi]
+    if: needs.validate.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: pypi   # configure trusted publisher on pypi.org
+    env:
+      SHA: ${{ needs.find-release-sha.outputs.qualifying_sha }}
+      VERSION: ${{ needs.validate.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        ref: ${{ needs.find-release-sha.outputs.qualifying_sha }}
+        fetch-depth: 0
+
+    - name: Download wheel artifacts (linux + macos)
+      run: |
+        mkdir -p dist pypi_dist
+        for wf in wheels.yml sdist.yml linux-sdk.yml packaging_mac.yml; do
+          run_id=$(gh run list \
+            --repo "${{ github.repository }}" \
+            --workflow "$wf" \
+            --commit "$SHA" \
+            --limit 1 \
+            --json databaseId --jq '.[0].databaseId')
+          echo "Downloading artifacts from $wf run $run_id"
+          gh run download "$run_id" --repo "${{ github.repository }}" --dir _stage
+        done
+        find _stage -type f -name '*.whl' -exec cp -v {} pypi_dist/ \;
+        find _stage -type f -name '*.tar.gz' ! -name '*.bottle.tar.gz' \
+          -exec cp -v {} pypi_dist/ \;
+        find _stage -type f \( -name '*.whl' -o -name '*.tar.gz' \
+                              -o -name '*.deb' -o -name '*.rpm' \
+                              -o -name '*.bottle.tar.gz' \) \
+          -exec cp -v {} dist/ \;
+        echo "=== PyPI dist ===" && ls -la pypi_dist/
+        echo "=== Full dist ===" && ls -la dist/
+
+    - name: Publish wheels + sdist to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
         packages-dir: pypi_dist
 
     - name: Create signed tag
