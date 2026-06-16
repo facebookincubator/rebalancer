@@ -36,7 +36,6 @@ from rebalancer.specs import (
     ConstraintSpec,
     KLSearchMoveTypeSpec,
     LocalSearchSolverSpec,
-    MinimizeMovementSpec,
     MoveTypeSpec,
     SingleMoveTypeSpec,
     SolverSpec,
