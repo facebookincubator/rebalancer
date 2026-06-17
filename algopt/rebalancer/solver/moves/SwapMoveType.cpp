@@ -341,7 +341,12 @@ MoveResult SwapMoveType::findBestMoveWithBundleOptions(
             !anyMoveInvalid(filter, coldBundle, hotContainer);
       };
 
+  const algopt::Timer timer(true);
   for (const auto& coldContainer : coldContainers) {
+    if (timer.getSeconds() >= timeLimit) {
+      stats.incrNumTimeouts(bestResult);
+      break;
+    }
     if (coldContainer == hotContainer) {
       continue;
     }
@@ -351,7 +356,7 @@ MoveResult SwapMoveType::findBestMoveWithBundleOptions(
         problem.configs.threadPool.get(),
         Filter(moves, shouldKeepBundleCandidate),
         evaluate,
-        timeLimit,
+        timeLimit - timer.getSeconds(),
         getParallelExecutionConfig());
     bestResult.aggregate(std::move(result));
   }
@@ -408,7 +413,12 @@ MoveResult SwapMoveType::findBestMove(
     return bestResult;
   }
 
+  const algopt::Timer timer(true);
   for (const auto hotObject : hotObjects) {
+    if (timer.getSeconds() >= timeLimit) {
+      stats.incrNumTimeouts(bestResult);
+      break;
+    }
     auto result = MoveResult::makeEmpty();
     if (containsExactlyOneElement(coldContainers)) {
       // If there is only one cold container, and we are greedy on src but not
@@ -423,7 +433,7 @@ MoveResult SwapMoveType::findBestMove(
           *coldContainers.begin(),
           stats,
           shouldParallelizeWithinColdContainer,
-          timeLimit);
+          timeLimit - timer.getSeconds());
     } else {
       // We have more than one cold container, so we can evaluate cold
       // containers in parallel
@@ -437,7 +447,7 @@ MoveResult SwapMoveType::findBestMove(
           evaluator.getProblem().configs.threadPool.get(),
           coldContainers,
           evaluate,
-          timeLimit,
+          timeLimit - timer.getSeconds(),
           getParallelExecutionConfig());
     }
     bestResult.aggregate(std::move(result));

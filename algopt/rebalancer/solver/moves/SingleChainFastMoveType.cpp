@@ -14,6 +14,7 @@
 
 #include "algopt/rebalancer/solver/moves/SingleChainFastMoveType.h"
 
+#include "algopt/rebalancer/algopt_common/Timer.h"
 #include "algopt/rebalancer/solver/iterators/Filter.h"
 #include "algopt/rebalancer/solver/moves/MoveHelper.h"
 #include "algopt/rebalancer/solver/utils/ObjectDeduper.h"
@@ -54,7 +55,12 @@ MoveResult SingleChainFastMoveType::findBestMove(
   auto bestResult = MoveResult::makeEmpty();
   const auto& precision = problem.getUniverse().getPrecision();
 
+  const algopt::Timer timer(true);
   for (const auto hotObject : dedupedObjs) {
+    if (timer.getSeconds() >= timeLimit) {
+      stats.incrNumTimeouts(bestResult);
+      break;
+    }
     const std::function<MoveResult(entities::ContainerId)> evaluate =
         [this, &evaluator, &stats, hotContainer, hotObject](
             auto coldContainer) {
@@ -71,7 +77,7 @@ MoveResult SingleChainFastMoveType::findBestMove(
         problem.configs.threadPool.get(),
         coldContainers,
         evaluate,
-        timeLimit,
+        timeLimit - timer.getSeconds(),
         getParallelExecutionConfig());
     bestResult.aggregate(std::move(result));
     if (bestResult.isBetter(precision)) {

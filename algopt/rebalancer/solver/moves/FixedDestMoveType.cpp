@@ -14,6 +14,7 @@
 
 #include "algopt/rebalancer/solver/moves/FixedDestMoveType.h"
 
+#include "algopt/rebalancer/algopt_common/Timer.h"
 #include "algopt/rebalancer/solver/iterators/Filter.h"
 #include "algopt/rebalancer/solver/moves/InvalidMoveFilter.h"
 #include "algopt/rebalancer/solver/moves/Move.h"
@@ -191,7 +192,12 @@ MoveResult FixedDestMoveType::findBestMoveWithBundleOptions(
             return result;
           };
 
+  const algopt::Timer timer(true);
   for (const auto& coldContainer : customColdContainers) {
+    if (timer.getSeconds() >= timeLimit) {
+      stats.incrNumTimeouts(bestResult);
+      break;
+    }
     folly::F14FastSet<std::pair<ObjectBundle, entities::ContainerId>> moves;
     if (coldContainer == hotContainer) {
       continue;
@@ -211,7 +217,7 @@ MoveResult FixedDestMoveType::findBestMoveWithBundleOptions(
         problem.configs.threadPool.get(),
         Filter(moves, shouldKeepCandidate),
         evaluate,
-        timeLimit,
+        timeLimit - timer.getSeconds(),
         getParallelExecutionConfig());
     bestResult.aggregate(std::move(result));
   }

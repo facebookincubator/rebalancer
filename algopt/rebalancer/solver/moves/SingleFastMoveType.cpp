@@ -56,6 +56,7 @@ MoveResult SingleFastMoveType::findBestMove(
 
     MoveResult result = MoveResult::makeEmpty();
 
+    const auto remainingTime = timeLimit - timer.getSeconds();
     if (spec_.destinationsToExplore().has_value()) {
       result = MoveHelper::findBestMove(
           evaluator,
@@ -66,7 +67,7 @@ MoveResult SingleFastMoveType::findBestMove(
               hotContainer,
               problem,
               spec_.destinationsToExplore().value()),
-          timeLimit,
+          remainingTime,
           stats,
           getParallelExecutionConfig());
     } else {
@@ -75,7 +76,7 @@ MoveResult SingleFastMoveType::findBestMove(
           hotContainer,
           hotObject,
           problem.containers,
-          timeLimit,
+          remainingTime,
           stats,
           getParallelExecutionConfig());
     }

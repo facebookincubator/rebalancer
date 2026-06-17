@@ -157,7 +157,11 @@ MoveResult GreedyGroupToScopeItemMoveType::findBestMove(
         problem.getObjectIdsForGroup(partitionName_, groupId);
 
     auto bestGroupMove = exploreMovingGroup(
-        evaluator, groupObjectIds, scope.getScopeItemIds(), stats, timeLimit);
+        evaluator,
+        groupObjectIds,
+        scope.getScopeItemIds(),
+        stats,
+        timeLimit - timer.getSeconds());
 
     bestMoves.aggregate(std::move(bestGroupMove));
 

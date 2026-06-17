@@ -65,7 +65,7 @@ MoveResult SingleRandomStratifiedMoveType::findBestMove(
         hotContainer,
         hotObject,
         getSampledDestinationsSet(hotObject, hotContainer, problem),
-        timeLimit,
+        timeLimit - timer.getSeconds(),
         stats,
         getParallelExecutionConfig());
     bestResult.aggregate(std::move(result));

@@ -14,6 +14,7 @@
 
 #include "algopt/rebalancer/solver/moves/ReplicaDropMoveType.h"
 
+#include "algopt/rebalancer/algopt_common/Timer.h"
 #include "algopt/rebalancer/solver/iterators/CartesianProduct.h"
 #include "algopt/rebalancer/solver/iterators/Filter.h"
 #include "algopt/rebalancer/solver/moves/MoveHelper.h"
@@ -68,7 +69,13 @@ MoveResult ReplicaDropMoveType::findBestMove(
         return result;
       };
 
+  auto bestResult = MoveResult::makeEmpty();
+  const algopt::Timer timer(true);
   for (auto hotObjectId : hotObjectIds) {
+    if (timer.getSeconds() >= timeLimit) {
+      stats.incrNumTimeouts(bestResult);
+      break;
+    }
     auto groupIdOpt = problem.getOnlyGroupIdIfExists(partition_, hotObjectId);
     if (!groupIdOpt) {
       // This object does not belong to any group.
@@ -98,19 +105,19 @@ MoveResult ReplicaDropMoveType::findBestMove(
     auto singleMoves =
         CartesianProduct(dynamicReplicaIds, acceptingOutOfScopeContainerIds);
 
-    auto bestResult = MoveHelper::findBest(
+    auto result = MoveHelper::findBest(
         problem.configs.threadPool.get(),
         singleMoves,
         evaluate,
-        timeLimit,
+        timeLimit - timer.getSeconds(),
         getParallelExecutionConfig());
 
-    if (bestResult.isBetter(precision)) {
-      return bestResult;
+    if (result.isBetter(precision)) {
+      return result;
     }
   }
 
-  return MoveResult::makeEmpty();
+  return bestResult;
 }
 
 } // namespace facebook::rebalancer

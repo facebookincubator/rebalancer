@@ -14,6 +14,7 @@
 
 #include "algopt/rebalancer/solver/moves/FixedSourceMoveType.h"
 
+#include "algopt/rebalancer/algopt_common/Timer.h"
 #include "algopt/rebalancer/solver/iterators/Filter.h"
 #include "algopt/rebalancer/solver/moves/InvalidMoveFilter.h"
 #include "algopt/rebalancer/solver/moves/MoveHelper.h"
@@ -206,7 +207,12 @@ MoveResult FixedSourceMoveType::findBestMove(
 
   const auto scopeId = universe.getScopeId(scopeName);
   const auto& scope = universe.getScope(scopeId);
+  const algopt::Timer timer(true);
   for (const auto& scopeItemName : scopeItems) {
+    if (timer.getSeconds() >= timeLimit) {
+      stats.incrNumTimeouts(bestResult);
+      break;
+    }
     const auto& containerIds =
         scope.getContainerIds(universe.getScopeItemId(scopeId, scopeItemName));
 
@@ -236,7 +242,7 @@ MoveResult FixedSourceMoveType::findBestMove(
         p.configs.threadPool.get(),
         Filter(moves, shouldKeepCandidate),
         evaluate,
-        timeLimit,
+        timeLimit - timer.getSeconds(),
         getParallelExecutionConfig());
     bestResult.aggregate(std::move(result));
 

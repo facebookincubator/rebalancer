@@ -74,7 +74,7 @@ MoveResult SingleRandomBatchesMoveType::findBestMove(
           hotContainer,
           hotObject,
           batch,
-          timeLimit,
+          timeLimit - timer.getSeconds(),
           stats,
           getParallelExecutionConfig());
       bestResult.aggregate(std::move(result));

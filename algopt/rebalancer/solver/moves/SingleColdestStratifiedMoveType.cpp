@@ -66,7 +66,7 @@ MoveResult SingleColdestStratifiedMoveType::findBestMove(
         hotContainer,
         hotObject,
         sampleSet,
-        timeLimit,
+        timeLimit - timer.getSeconds(),
         stats,
         getParallelExecutionConfig());
 

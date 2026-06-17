@@ -116,7 +116,7 @@ MoveResult ColocateGroupsMoveType::findBestMove(
             problem.configs.threadPool.get(),
             moveSets,
             evaluate,
-            timeLimit,
+            timeLimit - timer.getSeconds(),
             getParallelExecutionConfig()));
 
     if (bestResult.isBetter(precision)) {
