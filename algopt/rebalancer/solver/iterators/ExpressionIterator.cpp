@@ -51,14 +51,15 @@ PreOrderExpressionIterator& PreOrderExpressionIterator::operator++() {
   if (shouldExpand(expr)) {
     auto pushInOrderToStack = [&](const auto& beginIter, const auto& endIter) {
       for (auto it = beginIter; it != endIter; ++it) {
-        unique_push_to_stack(*it);
+        unique_push_to_stack({it->expr, it->potential});
       }
     };
 
     // We need to push children on the stack in the opposite of the desired
     // traversal order; getDescendingChildPotentials() returns the child
     // potentials sorted in descending order
-    auto& descendingChildPotentials = expr->getDescendingChildPotentials();
+    const auto& descendingChildPotentials =
+        expr->getDescendingChildPotentials();
     descending_ ? pushInOrderToStack(
                       descendingChildPotentials.rbegin(),
                       descendingChildPotentials.rend())

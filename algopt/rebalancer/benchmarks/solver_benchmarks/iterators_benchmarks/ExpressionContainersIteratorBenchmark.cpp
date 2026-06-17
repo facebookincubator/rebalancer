@@ -163,6 +163,69 @@ BENCHMARK(UpdateChildPotentialsOnlyIfRequired) {
   suspend.rehire();
 }
 
+BENCHMARK(RefreshDescendingChildPotentialsAfterFewChildChanges) {
+  folly::BenchmarkSuspender suspend;
+  const std::shared_ptr<const entities::Universe> universe =
+      std::make_shared<const entities::Universe>();
+  // Flat LinearSum with `childCount` single-container children. Each move
+  // changes two children's values. Only time to refresh child potentials
+  // refresh is timed
+  constexpr int childCount = 100'000;
+  constexpr int objectCount = 20'000;
+
+  const Assignment emptyAssignment;
+  auto objectVector = makeObjectVector(
+      PackerMap<entities::ObjectId, double>{}, 1, objectCount, universe);
+
+  PackerMap<ExprPtr, double> childToCoeff;
+  for (const auto i : folly::irange(childCount)) {
+    childToCoeff[object_lookup(
+        objectVector,
+        std::make_shared<PackerSet<entities::ContainerId>>(
+            PackerSet<entities::ContainerId>{container(i)}),
+        universe,
+        emptyAssignment)] = 1;
+  }
+  auto sum = std::make_shared<LinearSum>(universe, 0, childToCoeff);
+
+  // All objects start in container(0).
+  PackerMap<entities::ContainerId, std::vector<entities::ObjectId>>
+      containerToObjects;
+  for (const auto i : folly::irange(childCount)) {
+    containerToObjects[container(i)] = {};
+  }
+  for (const auto i : folly::irange(objectCount)) {
+    containerToObjects[container(0)].push_back(object(i));
+  }
+  const Assignment assignment(containerToObjects);
+
+  Context context;
+  sum->fullApply(TopToBottomEvaluator(context), assignment);
+  sum->init_unconstrained_bounds(context);
+
+  Orchestrator orchestrator;
+  orchestrator.init(
+      std::vector<Expression*>{sum.get()},
+      AffectedByChangeDecisionData(objectCount, childCount));
+
+  // Pre-build the cache so the first timed iteration measures a refresh,
+  // not an initial full build.
+  sum->getDescendingChildPotentials();
+
+  constexpr int nMoves = 500;
+  for (const auto i : folly::irange(nMoves)) {
+    context.clear();
+    context.changes() = ChangeSet(
+        {Change(object(i), container(0), -1),
+         Change(object(i), container(1), 1)});
+    orchestrator.apply(context, assignment);
+
+    suspend.dismiss();
+    sum->getDescendingChildPotentials();
+    suspend.rehire();
+  }
+}
+
 BENCHMARK(PruneOptimalSubgraph) {
   const std::shared_ptr<const entities::Universe> universe =
       std::make_shared<const entities::Universe>();

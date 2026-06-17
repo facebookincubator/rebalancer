@@ -275,7 +275,44 @@ class Expression {
 
   virtual void lpIntent(const LpEvaluator& evaluator, bool minimizing);
 
-  using DescendingChildPotentials = std::vector<std::pair<Expression*, double>>;
+  // A child entry in the descending-potential cache. `valueAtLastRefresh` is
+  // the child's `value` at the time `potential` was computed; the incremental
+  // refresh uses it to detect stale entries.
+  struct ChildPotential {
+    Expression* expr{nullptr};
+    double potential{0.0};
+    double valueAtLastRefresh{0.0};
+  };
+
+  // Cache of children sorted by descending potential plus a dirty bit. The
+  // owning Expression sets the bit on apply and rebuilds the cache on refresh.
+  struct DescendingChildPotentials {
+    std::vector<ChildPotential> potentials;
+    bool shouldRefresh = true;
+
+    bool isEmpty() const {
+      return potentials.empty();
+    }
+    size_t size() const {
+      return potentials.size();
+    }
+    auto begin() const {
+      return potentials.begin();
+    }
+    auto end() const {
+      return potentials.end();
+    }
+    auto rbegin() const {
+      return potentials.rbegin();
+    }
+    auto rend() const {
+      return potentials.rend();
+    }
+    void setPotentials(std::vector<ChildPotential> newPotentials) {
+      potentials = std::move(newPotentials);
+      shouldRefresh = false;
+    }
+  };
   const DescendingChildPotentials& getDescendingChildPotentials();
 
   std::string description;
@@ -333,7 +370,12 @@ class Expression {
       Context& context,
       const BoundConstraints& bc) const = 0;
 
-  void initOrRecomputeDescendingChildPotentials();
+  ChildPotential makeChildPotential(Expression* child, Context& context) const;
+
+  // Builds the cache (when empty) or refreshes it incrementally: re-sorts only
+  // the children whose `value` changed since the last refresh and merges them
+  // with the unchanged (still-sorted) run.
+  void refreshDescendingChildPotentials();
 
   /** Returns j, if the expression only touches containers in subproblem j.
    * If the expressions touches more subproblems returns nullopt */

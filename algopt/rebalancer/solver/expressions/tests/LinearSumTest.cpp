@@ -101,6 +101,44 @@ TEST_F(LinearSumTest, Caching) {
   }
 }
 
+// Exercises the refresh path where only some children's values change. The
+// stale entries are re-sorted and merged with the unchanged (still-sorted)
+// run, so the resulting order must match what a full re-sort would produce.
+TEST_F(LinearSumTest, RefreshMergesPartialChildChanges) {
+  setUpDefaultAssignment();
+  const auto universe = buildUniverse();
+  const Assignment assignment(
+      {{container(0), {object(0)}},
+       {container(1), {object(1)}},
+       {container(2), {object(2)}},
+       {container(3), {object(3)}}});
+
+  // Each variable depends on a distinct object, so a change to one object
+  // only changes that variable's value.
+  auto v0 = variable(object(0), container(0), universe, assignment); // 1
+  auto v1 = variable(object(1), container(1), universe, assignment); // 1
+  auto v2 = variable(object(2), container(2), universe, assignment); // 1
+  auto v3 = variable(object(3), container(3), universe, assignment); // 1
+
+  auto sum = std::make_shared<LinearSum>(
+      universe,
+      0,
+      PackerMap<std::shared_ptr<Expression>, double>{
+          {v0, 4.0}, {v1, 3.0}, {v2, 2.0}, {v3, 1.0}});
+
+  apply(sum, assignment);
+  EXPECT_TRUE(descendingChildPotentialsAsExpected(
+      *sum, {4.0, 3.0, 2.0, 1.0}, std::vector<ExprPtr>{v0, v1, v2, v3}));
+
+  // Move object(0) to container(5), which no variable in `sum` watches. Only
+  // v0's value drops to 0; v1/v2/v3 are unchanged. The refresh path takes
+  // the merge branch (one changed, three unchanged) and the new order must
+  // match a fresh full re-sort.
+  applyChanges(sum, {{object(0), container(5)}}, assignment);
+  EXPECT_TRUE(descendingChildPotentialsAsExpected(
+      *sum, {3.0, 2.0, 1.0, 0.0}, std::vector<ExprPtr>{v1, v2, v3, v0}));
+}
+
 TEST_F(LinearSumTest, EquivalenceSetsLinearSum) {
   setUpDefaultAssignment();
   const auto universe = buildUniverse();

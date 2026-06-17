@@ -163,7 +163,8 @@ bool descendingChildPotentialsAsExpected(
   }
 
   int index = 0;
-  for (auto& [childExpr, childPotentialValue] : descendingChildPotentials) {
+  for (const auto& [childExpr, childPotentialValue, _] :
+       descendingChildPotentials) {
     if (expr.getPrecision().compare(
             expectedDescendingChildPotentialValues.at(index),
             childPotentialValue) != 0) {

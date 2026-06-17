@@ -23,8 +23,11 @@
 
 #include <fmt/core.h>
 
+#include <algorithm>
+#include <iterator>
 #include <sstream>
 #include <stdexcept>
+#include <vector>
 
 namespace facebook::rebalancer {
 
@@ -102,6 +105,37 @@ std::optional<size_t> getTotalContainersInUniqueAndDirectlyAffectedSets(
   return totalSize;
 }
 
+bool higherPotentialFirst(
+    const Expression::ChildPotential& a,
+    const Expression::ChildPotential& b) {
+  if (a.potential != b.potential) {
+    // a should go before b if it has higher potential value
+    return b.potential < a.potential;
+  }
+
+  // if an expr does not have any unique or directly affected containers,
+  // then we take its size as infinity for comparison below, since we
+  // prefer expressions that affect some container
+  constexpr auto kInf = std::numeric_limits<size_t>::max();
+  const auto affectedSize1 =
+      getTotalContainersInUniqueAndDirectlyAffectedSets(a.expr).value_or(kInf);
+  const auto affectedSize2 =
+      getTotalContainersInUniqueAndDirectlyAffectedSets(b.expr).value_or(kInf);
+  if (affectedSize1 != affectedSize2) {
+    // if both have same potential values, then we prefer placing the one
+    // that affects fewer containers first, since that can potentially
+    // help in finding a "unique best hottest container"
+    // (https://fburl.com/code/4ueonsdy) quickly (e.g., if expr1 and expr2
+    // have the same potential, but expr1 affects only 1 container, while
+    // expr2 affects 3 containers, then we prefer exploring expr1 first)
+    return affectedSize1 < affectedSize2;
+  }
+
+  // if still tied, then just tie-break based on expressions with larger
+  // id going first (this choice is arbitrary)
+  return b.expr->getId() < a.expr->getId();
+}
+
 } // namespace
 
 std::atomic<int64_t> next_id(0);
@@ -157,7 +191,7 @@ double Expression::fullApply(
   auto cached = context.apply().get(id);
   if (!cached) {
     auto result = innerFullApply(evaluator, assignment);
-    descendingChildPotentials_.clear();
+    descendingChildPotentials_.shouldRefresh = true;
     return context.apply().save(id, result);
   }
   return *cached;
@@ -169,7 +203,7 @@ double Expression::partialApply(
     const ChangeSet& changes) {
   throwIfNotProperlyInitialized();
   auto newValue = innerPartialApply(evaluator, assignment, changes);
-  descendingChildPotentials_.clear();
+  descendingChildPotentials_.shouldRefresh = true;
   return newValue;
 }
 
@@ -429,63 +463,66 @@ bool Expression::shouldComputeDescendingChildPotentials() const {
 const Expression::DescendingChildPotentials&
 Expression::getDescendingChildPotentials() {
   if (shouldComputeDescendingChildPotentials() &&
-      descendingChildPotentials_.empty()) {
-    initOrRecomputeDescendingChildPotentials();
+      descendingChildPotentials_.shouldRefresh) {
+    refreshDescendingChildPotentials();
   }
 
   return descendingChildPotentials_;
 }
 
-void Expression::initOrRecomputeDescendingChildPotentials() {
-  if (!descendingChildPotentials_.empty()) {
-    throw std::runtime_error(
-        "Unexpected call to initOrRecomputeDescendingChildPotentials() when descendingChildPotentials_ is non-empty.\
-        Was descendingChildPotentials_ properly cleared after fullApply()/partialApply()?");
-  }
-  descendingChildPotentials_.reserve(children_.size());
+Expression::ChildPotential Expression::makeChildPotential(
+    Expression* child,
+    Context& context) const {
+  const auto coef = getChildCoefficient(child);
+  return ChildPotential{
+      .expr = child,
+      .potential = getPotential(child, coef, context),
+      .valueAtLastRefresh = child->value};
+}
+
+void Expression::refreshDescendingChildPotentials() {
   Context context;
-  for (const auto& child : children_) {
-    const double coef = getChildCoefficient(child.get());
-    descendingChildPotentials_.emplace_back(
-        child.get(), getPotential(child.get(), coef, context));
+  std::vector<ChildPotential> unchanged;
+  std::vector<ChildPotential> changed;
+
+  if (descendingChildPotentials_.isEmpty()) {
+    // Initial build: every child needs a fresh entry, none are "unchanged".
+    changed.reserve(children_.size());
+    for (const auto& child : children_) {
+      changed.push_back(makeChildPotential(child.get(), context));
+    }
+  } else {
+    // Incremental refresh: keep entries whose `value` didn't change.
+    unchanged.reserve(descendingChildPotentials_.size());
+    for (const auto& cp : descendingChildPotentials_) {
+      if (cp.expr->value == cp.valueAtLastRefresh) {
+        unchanged.push_back(cp);
+      } else {
+        changed.push_back(makeChildPotential(cp.expr, context));
+      }
+    }
+    if (changed.empty()) {
+      descendingChildPotentials_.shouldRefresh = false;
+      return;
+    }
   }
 
-  std::sort(
-      descendingChildPotentials_.begin(),
-      descendingChildPotentials_.end(),
-      [](const std::pair<Expression*, double>& pair1,
-         const std::pair<Expression*, double>& pair2) {
-        auto& [expr1, potential1] = pair1;
-        auto& [expr2, potential2] = pair2;
-        if (potential1 != potential2) {
-          // expr1 should go before expr2 if it has higher potential value
-          return potential2 < potential1;
-        }
+  std::sort(changed.begin(), changed.end(), higherPotentialFirst);
+  if (unchanged.empty()) {
+    descendingChildPotentials_.setPotentials(std::move(changed));
+    return;
+  }
 
-        auto affectedSizeOpt1 =
-            getTotalContainersInUniqueAndDirectlyAffectedSets(expr1);
-        auto affectedSizeOpt2 =
-            getTotalContainersInUniqueAndDirectlyAffectedSets(expr2);
-        // if an expr does not have any unique or directly affected containers,
-        // then we take its size as infinity for comparison below, since we
-        // prefer expressions that affect some container
-        constexpr auto infinity = std::numeric_limits<size_t>::max();
-        auto affectedSize1 = affectedSizeOpt1 ? *affectedSizeOpt1 : infinity;
-        auto affectedSize2 = affectedSizeOpt2 ? *affectedSizeOpt2 : infinity;
-        if (affectedSize1 != affectedSize2) {
-          // if both have same potential values, then we prefer placing the one
-          // that affects fewer containers first, since that can potentially
-          // help in finding a "unique best hottest container"
-          // (https://fburl.com/code/4ueonsdy) quickly (e.g., if expr1 and expr2
-          // have the same potential, but expr1 affects only 1 container, while
-          // expr2 affects 3 containers, then we prefer exploring expr1 first)
-          return affectedSize1 < affectedSize2;
-        }
-
-        // if still tied, then just tie-break based on expressions with larger
-        // id going first (this choice is arbitrary)
-        return expr2->id < expr1->id;
-      });
+  std::vector<ChildPotential> merged;
+  merged.reserve(unchanged.size() + changed.size());
+  std::merge(
+      unchanged.begin(),
+      unchanged.end(),
+      changed.begin(),
+      changed.end(),
+      std::back_inserter(merged),
+      higherPotentialFirst);
+  descendingChildPotentials_.setPotentials(std::move(merged));
 }
 
 std::string Expression::innerDigest(size_t /*maxChildren*/) const {
