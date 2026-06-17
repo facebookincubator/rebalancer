@@ -549,10 +549,11 @@ CO_TEST_F(ObjectPartitionLookupTest, ObjectPartitionLookupWithSquares) {
           /*penaltyTransform=*/
           ObjectPartitionLookupPenaltyTransform::SQUARE));
 
-  // skip lp expr evaluation since only IDENTITY penalty transform is supported
+  // skip lp expr evaluation since only IDENTITY and STEP penalty transforms are
+  // supported
   LpAssertOptions lpAssertOptions = {
       .exceptionForLpExpr =
-          "ObjectPartitionLookup: only IDENTITY penalty transform is supported in LP"};
+          "ObjectPartitionLookup: only IDENTITY and STEP penalty transforms are supported in LP"};
 
   // With normalization, apply() must return (0/3)^2 + (1/4)^2 + (2/5)^2 =
   // 0.2225
@@ -676,38 +677,112 @@ CO_TEST_F(ObjectPartitionLookupTest, ObjectPartitionLookupWithStep) {
           /*defaultGroupLimitOverride=*/std::nullopt,
           /*penaltyTransform=*/ObjectPartitionLookupPenaltyTransform::STEP));
 
-  // skip lp expr evaluation since non-IDENTITY penalty transforms are not
-  // supported in LP
-  const LpAssertOptions lpAssertOptions = {
-      .exceptionForLpExpr =
-          "ObjectPartitionLookup: only IDENTITY penalty transform is supported in LP"};
-
   // g0 over limit -> 1, g1 at limit -> 0, g2 elsewhere -> 0. Sum = 1.
-  EXPECT_EQ(1.0, apply(objectPartitionLookup, assignment, lpAssertOptions));
+  EXPECT_EQ(1.0, apply(objectPartitionLookup, assignment));
 
   // Move g2 into c0: g2 now over limit -> 1. Sum = g0 + g2 = 2.
   EXPECT_EQ(
       2.0,
-      evaluate(
-          objectPartitionLookup,
-          {{object(3), container(0)}},
-          assignment,
-          lpAssertOptions));
+      evaluate(objectPartitionLookup, {{object(3), container(0)}}, assignment));
 
   // Move g1 out of c0: g1 now under limit, STEP still 0. Sum = g0 = 1.
   EXPECT_EQ(
       1.0,
-      evaluate(
-          objectPartitionLookup,
-          {{object(2), container(1)}},
-          assignment,
-          lpAssertOptions));
+      evaluate(objectPartitionLookup, {{object(2), container(1)}}, assignment));
 
   // All groups can be at-or-under their limits -> lower_bound = 0.
   // Max STEP per group: g0 = 1, g1 = 0 (max weight 1 = limit), g2 = 1 ->
   // upper_bound = 2.
   EXPECT_EQ(0.0, lower_bound(*objectPartitionLookup));
   EXPECT_EQ(2.0, upper_bound(*objectPartitionLookup));
+}
+
+CO_TEST_F(
+    ObjectPartitionLookupTest,
+    ObjectPartitionLookupWithStepAndGroupsAllowed) {
+  // 5 groups with one object each. g0..g3 have a limit of 0; g4 has a limit
+  // of 1. We count how many groups are over their limit in container0;
+  // container1 just holds objects that are currently moved "out" of container0.
+  //
+  // groupsAllowed_=3 lets us ignore up to 3 of those over-limit groups, so
+  // the count we return is max(0, over_limit_count - 3).
+  setInitialAssignment(
+      InitialAssignment{
+          {"container0", {"object0", "object1", "object2", "object3"}},
+          {"container1", {"object4"}}});
+
+  co_await addPartition(
+      "partition1",
+      {{"group0", {"object0"}},
+       {"group1", {"object1"}},
+       {"group2", {"object2"}},
+       {"group3", {"object3"}},
+       {"group4", {"object4"}}});
+
+  co_await addScope("scope", {{"scopeItem", {"container1"}}});
+
+  const auto universe = buildUniverse();
+  auto assignment =
+      Assignment(universe->getContainers().getInitialAssignment());
+
+  auto objectPartition = object_partition(
+      partitionId("partition1"),
+      dimensionId("object_count"),
+      {{group(4), 1}},
+      universe);
+
+  auto objectPartitionLookup = std::make_shared<ObjectPartitionLookupDefault>(
+      ObjectPartitionLookupDefault(
+          objectPartition,
+          std::make_shared<PackerSet<entities::ContainerId>>(
+              PackerSet<entities::ContainerId>{container(0)}),
+          scope(),
+          scopeItem(),
+          universe,
+          assignment,
+          /*groupLimitOverrides=*/{},
+          /*initialDuringObjects=*/{},
+          /*defaultGroupLimitOverride=*/std::nullopt,
+          /*penaltyTransform=*/ObjectPartitionLookupPenaltyTransform::STEP,
+          /*groupsAllowed=*/3));
+
+  // Allowing some groups to go over is only supported when minimizing.
+  const LpAssertOptions lpOptions{
+      .exceptionOnlyForLpExprMax =
+          "ObjectPartitionLookup: groupsAllowed_ > 0 when minimizing=false is not supported in LP"};
+
+  // 4 groups (g0..g3) are over their limit; ignore 3 -> count = 1.
+  EXPECT_EQ(1.0, apply(objectPartitionLookup, assignment, lpOptions));
+
+  // Move g0's object out: only 3 groups still over (g1..g3); ignore 3 -> 0.
+  EXPECT_EQ(
+      0.0,
+      evaluate(
+          objectPartitionLookup,
+          {{object(0), container(1)}},
+          assignment,
+          lpOptions));
+
+  // Move g0 and g1 out: only 2 groups over (g2, g3). We can ignore at most
+  // 3, but there are only 2 to ignore -> count = 0.
+  EXPECT_EQ(
+      0.0,
+      evaluate(
+          objectPartitionLookup,
+          {{object(0), container(1)}, {object(1), container(1)}},
+          assignment,
+          lpOptions));
+
+  // Move g4's object into container0. g4 is still within its limit of 1, so
+  // it isn't an over-limit group. The 4 original over-limit groups are
+  // unchanged -> ignore 3 -> count = 1.
+  EXPECT_EQ(
+      1.0,
+      evaluate(
+          objectPartitionLookup,
+          {{object(4), container(0)}},
+          assignment,
+          lpOptions));
 }
 
 CO_TEST_F(ObjectPartitionLookupTest, ObjectPartitionLookupGroupsLimit) {
@@ -831,10 +906,11 @@ CO_TEST_F(ObjectPartitionLookupTest, ObjectPartitionLookup2) {
           ObjectPartitionLookupPenaltyTransform::SQUARE,
           /*groupsAllowed=*/0));
 
-  // skip lp expr evaluation since only IDENTITY penalty transform is supported
+  // skip lp expr evaluation since only IDENTITY and STEP penalty transforms are
+  // supported
   LpAssertOptions lpAssertOptions = {
       .exceptionForLpExpr =
-          "ObjectPartitionLookup: only IDENTITY penalty transform is supported in LP"};
+          "ObjectPartitionLookup: only IDENTITY and STEP penalty transforms are supported in LP"};
 
   EXPECT_EQ(0.25, apply(objectPartitionLookup, assignment, lpAssertOptions));
 

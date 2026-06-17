@@ -19,6 +19,7 @@
 #include "algopt/rebalancer/solver/expressions/ObjectPartition.h"
 #include "algopt/rebalancer/solver/expressions/Operators.h"
 #include "algopt/rebalancer/solver/expressions/PropertiesHelper.h"
+#include "algopt/rebalancer/solver/expressions/Step.h"
 #include "algopt/rebalancer/solver/expressions/TopToBottomEvaluator.h"
 #include "algopt/rebalancer/solver/iterators/StlWrapper.h"
 #include "algopt/rebalancer/solver/utils/BoundConstraints.h"
@@ -529,9 +530,10 @@ algopt::lp::Expression ObjectPartitionLookup<Policy>::lp(
     const LpEvaluator& evaluator,
     bool minimizing,
     const interface::OptimalSolverSpec& /* configs */) {
-  if (penaltyTransform_ != ObjectPartitionLookupPenaltyTransform::IDENTITY) {
+  if (penaltyTransform_ != ObjectPartitionLookupPenaltyTransform::IDENTITY &&
+      penaltyTransform_ != ObjectPartitionLookupPenaltyTransform::STEP) {
     throw std::runtime_error(
-        "ObjectPartitionLookup: only IDENTITY penalty transform is supported in LP");
+        "ObjectPartitionLookup: only IDENTITY and STEP penalty transforms are supported in LP");
   }
   if (groupsAllowed_ > 0 && !minimizing) {
     throw std::runtime_error(
@@ -679,7 +681,23 @@ algopt::lp::Expression ObjectPartitionLookup<Policy>::lp(
       REBALANCER_NEWCTR(penalty <= sum + sum_ub * (1 - z));
     }
 
-    expr += penalty;
+    switch (penaltyTransform_) {
+      case ObjectPartitionLookupPenaltyTransform::IDENTITY:
+        expr += penalty;
+        break;
+      case ObjectPartitionLookupPenaltyTransform::STEP:
+        expr += Step::encodeLp(
+            penalty,
+            Bounds{.lower_bound = 0, .upper_bound = sum_ub},
+            /*childIsInteger=*/false,
+            *this,
+            evaluator,
+            minimizing);
+        break;
+      case ObjectPartitionLookupPenaltyTransform::SQUARE:
+        throw std::runtime_error(
+            "SQUARE penalty transform is not supported in LP");
+    }
   }
   if (addGroupConstraint) {
     newCtr(

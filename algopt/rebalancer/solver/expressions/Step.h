@@ -37,7 +37,19 @@ class Step : public Transform {
 
   virtual const std::string_view& getType() const override;
 
+  // Indicator for `child > 0`: returns an LP expression that equals 1 iff
+  // `child > 0` and 0 otherwise. Supporting MIP constraints are registered
+  // on `constraintOwner` so they inherit its id-tagged constraint names.
+  static algopt::lp::Expression encodeLp(
+      const algopt::lp::Expression& child,
+      const Bounds& childBounds,
+      bool childIsInteger,
+      const Expression& constraintOwner,
+      const LpEvaluator& evaluator,
+      bool minimizing);
+
  private:
   virtual double perform_transform(double val) const override;
 };
+
 } // namespace facebook::rebalancer

@@ -51,41 +51,55 @@ algopt::lp::Expression Step::lp(
     const LpEvaluator& evaluator,
     bool minimizing,
     const interface::OptimalSolverSpec& configs) {
-  auto expr = getOnlyChildRawPtr();
-  auto [exprLb, exprUb] = evaluator.lowerAndUpperBounds(expr);
-  auto ub = scaled_bound(exprUb);
-  const auto& precision = getPrecision();
+  const auto child = getOnlyChildRawPtr();
+  return encodeLp(
+      evaluator.lp(child, minimizing, configs),
+      evaluator.lowerAndUpperBounds(child),
+      child->is_integer(evaluator.getContext()),
+      *this,
+      evaluator,
+      minimizing);
+}
+
+algopt::lp::Expression Step::encodeLp(
+    const algopt::lp::Expression& child,
+    const Bounds& childBounds,
+    bool childIsInteger,
+    const Expression& constraintOwner,
+    const LpEvaluator& evaluator,
+    bool minimizing) {
+  const auto& [childLb, childUb] = childBounds;
+  const auto ub = constraintOwner.scaled_bound(childUb);
+  const auto& precision = constraintOwner.getPrecision();
   const auto tolerance = precision.getTolerances().absolute().value();
 
   // STEP will always be 0
   if (precision.compare(ub, tolerance) <= 0) {
-    REBALANCER_NEWCTR(evaluator.lp(expr, minimizing, configs) <= tolerance);
+    constraintOwner.newCtr(evaluator, "step_zero", child <= tolerance);
     return evaluator.makeLpExpression(0);
   }
 
   // STEP will alway be 1
-  if (precision.isStrictlyGtZero(exprLb)) {
-    REBALANCER_NEWCTR(evaluator.lp(expr, minimizing, configs) >= -tolerance);
+  if (precision.isStrictlyGtZero(childLb)) {
+    constraintOwner.newCtr(evaluator, "step_one", child >= -tolerance);
     return evaluator.makeLpExpression(1);
   }
 
-  // At this stage exprLb <= algopt::kEpsilon and ub >=
+  // At this stage childLb <= algopt::kEpsilon and ub >=
   // algopt::kEpsilon
   auto var = lp_bool_var(evaluator, "step");
-
-  auto& childVar = evaluator.lp(expr, minimizing, configs);
-  REBALANCER_NEWCTR(childVar <= ub * var);
+  constraintOwner.newCtr(evaluator, "step_ub", child <= ub * var);
 
   if (!minimizing) {
     // NOTE: there is a multiplication by 2 below since Xpress seems to ignore
     // the 'smallestPositiveValue' from the relation below when it is set equal
     // to the integer tolerance
-    const double smallestPositiveValue =
-        expr->is_integer(evaluator.getContext())
-        ? 1.0
-        : 2 * evaluator.getIntegerTolerance();
-    REBALANCER_NEWCTR(
-        (exprLb - 1) * (1 - var) + smallestPositiveValue <= childVar);
+    const auto smallestPositiveValue =
+        childIsInteger ? 1.0 : 2 * evaluator.getIntegerTolerance();
+    constraintOwner.newCtr(
+        evaluator,
+        "step_lb",
+        (childLb - 1) * (1 - var) + smallestPositiveValue <= child);
   }
 
   return var;
