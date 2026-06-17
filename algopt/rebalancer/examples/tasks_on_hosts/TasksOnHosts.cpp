@@ -108,7 +108,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
   jobTaskDistribution.limit()->globalLimit() = 1;
   solver->addConstraint(jobTaskDistribution);
 
-  const OptimalSolverSpec spec;
+  OptimalSolverSpec spec;
+  spec.solverPackage() = OptimalSolverPackage::HIGHS;
   solver->addSolver(spec);
 
   // Generate a solution and print it

@@ -25,6 +25,7 @@ from algopt.rebalancer.interface.py_client.ProblemSolver import ProblemSolver
 from rebalancer.interface.thrift.v2.ProblemSolver.thrift_types import SolverSpecs
 from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import (
     LocalSearchSolverSpec,
+    OptimalSolverPackage,
     OptimalSolverSpec,
 )
 
@@ -54,6 +55,7 @@ def set_mip_gap():
     solver.addSolver(
         SolverSpecs(
             optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS,
                 timeLimitMs=300000,
                 mipGap=0.05,  # Stop when within 5%
             )
@@ -68,7 +70,14 @@ def set_thread_count():
 
     # set_thread_count_start
     # Use 8 threads for faster solving
-    solver.addSolver(SolverSpecs(optimalSolverSpec=OptimalSolverSpec(threads=8)))
+    solver.addSolver(
+        SolverSpecs(
+            optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS,
+                threads=8,
+            )
+        )
+    )
     # set_thread_count_end
 
 
@@ -85,7 +94,11 @@ def warmstart_with_local_search():
     # Then refine with Optimal (uses LS result as warmstart)
     solver.addSolver(
         SolverSpecs(
-            optimalSolverSpec=OptimalSolverSpec(timeLimitMs=180000, mipGap=0.02)
+            optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS,
+                timeLimitMs=180000,
+                mipGap=0.02,
+            )
         )
     )
     # warmstart_with_local_search_end

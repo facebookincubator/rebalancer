@@ -20,7 +20,10 @@
 from algopt.rebalancer.examples.tasks_on_hosts.pretty_print import prettyPrint
 from algopt.rebalancer.interface.py_client.ProblemSolver import ProblemSolver
 from rebalancer.interface.thrift.v2.ProblemSolver.thrift_types import SolverSpecs
-from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import OptimalSolverSpec
+from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import (
+    OptimalSolverPackage,
+    OptimalSolverSpec,
+)
 
 
 def main() -> None:
@@ -39,7 +42,13 @@ def main() -> None:
         }
     )
 
-    solver.addSolver(SolverSpecs(optimalSolverSpec=OptimalSolverSpec()))
+    solver.addSolver(
+        SolverSpecs(
+            optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS,
+            )
+        )
+    )
 
     # Shown later in the tutorial: generate a solution and print it
     solution = solver.solve()

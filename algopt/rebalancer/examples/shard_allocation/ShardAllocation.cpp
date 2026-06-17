@@ -253,6 +253,7 @@ int main(int argc, char** argv) {
     solver->addSolver(spec);
   } else {
     OptimalSolverSpec spec;
+    spec.solverPackage() = OptimalSolverPackage::HIGHS;
     if (FLAGS_max_solve_time == 0) {
       spec.skipMipSolveForTesting() = true;
     } else {

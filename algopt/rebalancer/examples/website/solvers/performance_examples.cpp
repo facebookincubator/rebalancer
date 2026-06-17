@@ -61,6 +61,7 @@ void set_mip_gap() {
   // set_mip_gap_start
   // Accept 5% gap instead of waiting for optimality
   OptimalSolverSpec spec;
+  spec.solverPackage() = OptimalSolverPackage::HIGHS;
   spec.solveTime() = 300;
 
   solver.addSolver(spec);
@@ -77,6 +78,7 @@ void set_thread_count() {
   // set_thread_count_start
   // Use 8 threads for faster solving
   OptimalSolverSpec spec;
+  spec.solverPackage() = OptimalSolverPackage::HIGHS;
 
   solver.addSolver(spec);
   // set_thread_count_end
@@ -99,6 +101,7 @@ void warmstart_with_local_search() {
 
   // Then refine with Optimal (uses LS result as warmstart)
   OptimalSolverSpec optSpec;
+  optSpec.solverPackage() = OptimalSolverPackage::HIGHS;
   optSpec.solveTime() = 180;
   solver.addSolver(optSpec);
   // warmstart_with_local_search_end

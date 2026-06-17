@@ -32,6 +32,7 @@ from rebalancer.interface.thrift.v2.ProblemSpecs.thrift_types import (
 from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import (
     LocalSearchSolverSpec,
     MoveTypeSpec,
+    OptimalSolverPackage,
     OptimalSolverSpec,
     SingleFastMoveTypeSpec,
 )
@@ -139,7 +140,7 @@ def main() -> None:
     # solutions. This flag executes a MIP (Mixed Integer Programming) solver
     # which looks for a globally optimal solution.
     if "--optimal" in sys.argv:
-        solver_spec = OptimalSolverSpec()
+        solver_spec = OptimalSolverSpec(solverPackage=OptimalSolverPackage.HIGHS)
         solver.addSolver(SolverSpecs(optimalSolverSpec=solver_spec))
     else:
         solver.addSolver(

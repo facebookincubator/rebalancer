@@ -146,6 +146,7 @@ static int solve_eightqueens(bool use_optimal_solver) {
   // use either LocalSearchSolver or Optimal solver
   if (use_optimal_solver) {
     OptimalSolverSpec spec;
+    spec.solverPackage() = OptimalSolverPackage::HIGHS;
     if (FLAGS_max_solve_time == 0) {
       spec.skipMipSolveForTesting() = true;
     } else {

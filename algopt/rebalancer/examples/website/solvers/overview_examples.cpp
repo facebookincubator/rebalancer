@@ -101,6 +101,7 @@ void combining_solvers() {
   solver.addSolver(lsSpec);
 
   OptimalSolverSpec optSpec;
+  optSpec.solverPackage() = OptimalSolverPackage::HIGHS;
   optSpec.solveTime() = 60;
   solver.addSolver(optSpec);
 
@@ -130,6 +131,7 @@ void compare_solvers() {
   ProblemSolver solver2(executor, "example", "test");
   setupMinimalProblem(solver2);
   OptimalSolverSpec optSpec;
+  optSpec.solverPackage() = OptimalSolverPackage::HIGHS;
   optSpec.solveTime() = 60;
   solver2.addSolver(optSpec);
   auto solution2 = solver2.solve();

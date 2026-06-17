@@ -85,6 +85,7 @@ void sequential_solvers() {
   solver.addSolver(lsSpec);
 
   OptimalSolverSpec optSpec;
+  optSpec.solverPackage() = OptimalSolverPackage::HIGHS;
   optSpec.solveTime() = 60;
   solver.addSolver(optSpec);
 
@@ -112,6 +113,7 @@ void time_limited_approach() {
 
   // Then give Optimal up to 5 minutes to refine
   OptimalSolverSpec optSpec;
+  optSpec.solverPackage() = OptimalSolverPackage::HIGHS;
   optSpec.solveTime() = 300;
   solver.addSolver(optSpec);
   // time_limited_approach_end

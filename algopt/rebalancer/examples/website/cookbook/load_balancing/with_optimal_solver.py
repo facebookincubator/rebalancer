@@ -29,7 +29,10 @@ from rebalancer.interface.thrift.v2.ProblemSpecs.thrift_types import (
     BalanceSpec,
     BalanceSpecFormula,
 )
-from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import OptimalSolverSpec
+from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import (
+    OptimalSolverPackage,
+    OptimalSolverSpec,
+)
 
 
 def main():
@@ -84,6 +87,7 @@ def main():
     solver.addSolver(
         SolverSpecs(
             optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS,
                 timeLimitMs=60000,  # 1 minute
             )
         )

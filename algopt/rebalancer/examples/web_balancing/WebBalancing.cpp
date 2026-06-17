@@ -213,7 +213,8 @@ static void balance_web_tiers() {
   balanceSpec.dimension() = "rps";
   solver->addGoal(std::move(balanceSpec), 50.0);
 
-  const OptimalSolverSpec solver_spec;
+  OptimalSolverSpec solver_spec;
+  solver_spec.solverPackage() = OptimalSolverPackage::HIGHS;
   solver->addSolver(solver_spec);
 
   const auto& solution = solver->solve();

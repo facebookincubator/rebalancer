@@ -146,7 +146,7 @@ int main(int argc, char** argv) {
   auto solver = makeRebalancerModelForVertexCover(vertices, edges);
 
   OptimalSolverSpec optimalSolverSpec;
-  optimalSolverSpec.solverPackage() = OptimalSolverPackage::GUROBI;
+  optimalSolverSpec.solverPackage() = OptimalSolverPackage::HIGHS;
   optimalSolverSpec.solveTime() = 30;
   solver->addSolver(optimalSolverSpec);
 

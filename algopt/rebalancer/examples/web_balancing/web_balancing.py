@@ -28,7 +28,10 @@ from rebalancer.interface.thrift.v2.ProblemSpecs.thrift_types import (
     Limit,
     MinimizeMovementSpec,
 )
-from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import OptimalSolverSpec
+from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import (
+    OptimalSolverPackage,
+    OptimalSolverSpec,
+)
 
 
 # See tutorial at:
@@ -162,7 +165,7 @@ def main() -> None:
     problem_add_constraints(solver)
     problem_add_goals(solver, rps)
 
-    solver_spec = OptimalSolverSpec()
+    solver_spec = OptimalSolverSpec(solverPackage=OptimalSolverPackage.HIGHS)
     solver.addSolver(solver_spec)
 
     solution = solver.solve()

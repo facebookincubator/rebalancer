@@ -27,7 +27,10 @@ from rebalancer.interface.thrift.v2.ProblemSpecs.thrift_types import (
     CapacitySpec,
     Limit,
 )
-from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import OptimalSolverSpec
+from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import (
+    OptimalSolverPackage,
+    OptimalSolverSpec,
+)
 
 
 # See tutorial at:
@@ -142,7 +145,7 @@ def main() -> None:
     sudoku_add_scopes(solver)
     sudoku_add_constraints(solver)
 
-    solver_spec = OptimalSolverSpec()
+    solver_spec = OptimalSolverSpec(solverPackage=OptimalSolverPackage.HIGHS)
     solver.addSolver(solver_spec)
 
     backupParams = ManifoldBackupParams(uploadPolicy=ManifoldUploadPolicy.ON_FAILURE)

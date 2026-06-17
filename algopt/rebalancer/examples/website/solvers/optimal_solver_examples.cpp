@@ -72,6 +72,7 @@ void quick_example() {
 
   // quick_example_start
   OptimalSolverSpec spec;
+  spec.solverPackage() = OptimalSolverPackage::HIGHS;
   spec.solveTime() = 300; // 5 minute time limit
 
   solver.addSolver(spec);
@@ -97,6 +98,7 @@ void small_problem_optimal() {
   // small_problem_optimal_start
   // Small problem, can wait for optimal
   OptimalSolverSpec spec;
+  spec.solverPackage() = OptimalSolverPackage::HIGHS;
   spec.solveTime() = 600; // 10 minutes
 
   solver.addSolver(spec);
@@ -113,6 +115,7 @@ void medium_problem_time_limited() {
   // medium_problem_time_limited_start
   // Medium problem, accept "good enough"
   OptimalSolverSpec spec;
+  spec.solverPackage() = OptimalSolverPackage::HIGHS;
   spec.solveTime() = 300; // 5 minutes
 
   solver.addSolver(spec);
@@ -129,6 +132,7 @@ void quick_optimality_check() {
   // quick_optimality_check_start
   // See if we can solve quickly
   OptimalSolverSpec spec;
+  spec.solverPackage() = OptimalSolverPackage::HIGHS;
   spec.solveTime() = 60; // 1 minute
 
   solver.addSolver(spec);
@@ -154,6 +158,7 @@ void validate_local_search() {
   ProblemSolver solver2(executor, "example", "test");
   setupMinimalProblem(solver2);
   OptimalSolverSpec optSpec;
+  optSpec.solverPackage() = OptimalSolverPackage::HIGHS;
   optSpec.solveTime() = 300;
   solver2.addSolver(optSpec);
   auto opt_solution = solver2.solve();
@@ -182,6 +187,7 @@ void warm_starting() {
   solver.addSolver(lsSpec);
 
   OptimalSolverSpec optSpec;
+  optSpec.solverPackage() = OptimalSolverPackage::HIGHS;
   optSpec.solveTime() = 60;
   solver.addSolver(optSpec);
   // Optimal will use Local Search result as warmstart
@@ -198,6 +204,7 @@ void thread_control() {
   // thread_control_start
   // Use specific number of threads
   OptimalSolverSpec spec;
+  spec.solverPackage() = OptimalSolverPackage::HIGHS;
 
   solver.addSolver(spec);
   // thread_control_end

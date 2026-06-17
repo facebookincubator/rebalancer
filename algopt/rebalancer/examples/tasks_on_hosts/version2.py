@@ -27,7 +27,10 @@ from rebalancer.interface.thrift.v2.ProblemSpecs.thrift_types import (
     BalanceSpec,
     BalanceSpecFormula,
 )
-from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import OptimalSolverSpec
+from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import (
+    OptimalSolverPackage,
+    OptimalSolverSpec,
+)
 
 
 def main() -> None:
@@ -61,7 +64,13 @@ def main() -> None:
     )
     solver.addGoal(GoalSpecs(balanceSpec=spec), 1)
 
-    solver.addSolver(SolverSpecs(optimalSolverSpec=OptimalSolverSpec()))
+    solver.addSolver(
+        SolverSpecs(
+            optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS,
+            )
+        )
+    )
 
     # Generate a solution and print it
     solution = solver.solve()

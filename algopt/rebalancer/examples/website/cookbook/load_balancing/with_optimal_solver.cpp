@@ -88,6 +88,7 @@ int main(int argc, char* argv[]) {
 
   // variation_start
   OptimalSolverSpec optimal;
+  optimal.solverPackage() = OptimalSolverPackage::HIGHS;
   optimal.solveTime() = 60000; // 1 minute
   solver.addSolver(optimal);
   // variation_end

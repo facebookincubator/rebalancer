@@ -34,6 +34,7 @@ from rebalancer.interface.thrift.v2.ProblemSpecs.thrift_types import (
 )
 from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import (
     LocalSearchSolverSpec,
+    OptimalSolverPackage,
     OptimalSolverSpec,
 )
 
@@ -48,7 +49,12 @@ def sequential_solvers():
         SolverSpecs(localSearchSolverSpec=LocalSearchSolverSpec(timeLimitMs=10000))
     )
     solver.addSolver(
-        SolverSpecs(optimalSolverSpec=OptimalSolverSpec(timeLimitMs=60000))
+        SolverSpecs(
+            optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS,
+                timeLimitMs=60000,
+            )
+        )
     )
 
     # Local Search runs first, finds good solution
@@ -70,6 +76,7 @@ def time_limited_approach():
     solver.addSolver(
         SolverSpecs(
             optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS,
                 timeLimitMs=300000,
                 mipGap=0.05,  # Accept 5% gap
             )

@@ -25,6 +25,7 @@ from algopt.rebalancer.interface.py_client.ProblemSolver import ProblemSolver
 from rebalancer.interface.thrift.v2.ProblemSolver.thrift_types import SolverSpecs
 from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import (
     LocalSearchSolverSpec,
+    OptimalSolverPackage,
     OptimalSolverSpec,
 )
 
@@ -37,6 +38,7 @@ def quick_example():
     solver.addSolver(
         SolverSpecs(
             optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS,
                 timeLimitMs=300000,  # 5 minute time limit
                 mipGap=0.01,  # Stop when within 1% of optimal
             )
@@ -63,6 +65,7 @@ def small_problem_optimal():
     solver.addSolver(
         SolverSpecs(
             optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS,
                 timeLimitMs=600000,  # 10 minutes
                 mipGap=0.0,  # Don't stop until proven optimal
             )
@@ -80,6 +83,7 @@ def medium_problem_time_limited():
     solver.addSolver(
         SolverSpecs(
             optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS,
                 timeLimitMs=300000,  # 5 minutes
                 mipGap=0.05,  # Stop when within 5%
             )
@@ -97,6 +101,7 @@ def quick_optimality_check():
     solver.addSolver(
         SolverSpecs(
             optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS,
                 timeLimitMs=60000,  # 1 minute
                 mipGap=0.10,  # Accept 10% gap
             )
@@ -118,7 +123,12 @@ def validate_local_search():
     solver2 = ProblemSolver(service_name="example", service_scope="test")
     # ... set up same problem ...
     solver2.addSolver(
-        SolverSpecs(optimalSolverSpec=OptimalSolverSpec(timeLimitMs=300000))
+        SolverSpecs(
+            optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS,
+                timeLimitMs=300000,
+            )
+        )
     )
     opt_solution = solver2.solve()
 
@@ -140,7 +150,12 @@ def warm_starting():
         SolverSpecs(localSearchSolverSpec=LocalSearchSolverSpec(timeLimitMs=10000))
     )
     solver.addSolver(
-        SolverSpecs(optimalSolverSpec=OptimalSolverSpec(timeLimitMs=60000))
+        SolverSpecs(
+            optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS,
+                timeLimitMs=60000,
+            )
+        )
     )
     # Optimal will use Local Search result as warmstart
     # warm_starting_end
@@ -155,7 +170,8 @@ def thread_control():
     solver.addSolver(
         SolverSpecs(
             optimalSolverSpec=OptimalSolverSpec(
-                threads=4  # Use 4 cores
+                solverPackage=OptimalSolverPackage.HIGHS,
+                threads=4,  # Use 4 cores
             )
         )
     )

@@ -25,6 +25,7 @@ from algopt.rebalancer.interface.py_client.ProblemSolver import ProblemSolver
 from rebalancer.interface.thrift.v2.ProblemSolver.thrift_types import SolverSpecs
 from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import (
     LocalSearchSolverSpec,
+    OptimalSolverPackage,
     OptimalSolverSpec,
 )
 
@@ -59,7 +60,11 @@ def combining_solvers():
         SolverSpecs(localSearchSolverSpec=LocalSearchSolverSpec(timeLimitMs=10000))
     )
     solver.addSolver(
-        SolverSpecs(optimalSolverSpec=OptimalSolverSpec(timeLimitMs=60000))
+        SolverSpecs(
+            optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS, timeLimitMs=60000
+            )
+        )
     )
 
     # Local Search runs first, finds good solution
@@ -83,7 +88,11 @@ def compare_solvers():
     solver2 = ProblemSolver(service_name="example", service_scope="test")
     # ... set up same problem ...
     solver2.addSolver(
-        SolverSpecs(optimalSolverSpec=OptimalSolverSpec(timeLimitMs=60000))
+        SolverSpecs(
+            optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS, timeLimitMs=60000
+            )
+        )
     )
     solution2 = solver2.solve()
     print(f"Optimal: {solution2.objectiveValue} in {solution2.profile.solveTime}ms")

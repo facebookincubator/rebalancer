@@ -223,7 +223,8 @@ static void solve_sudoku(
 
   solver->addConstraint(capacitySpec);
 
-  const OptimalSolverSpec solver_spec;
+  OptimalSolverSpec solver_spec;
+  solver_spec.solverPackage() = OptimalSolverPackage::HIGHS;
   solver->addSolver(solver_spec);
 
   auto solution = solver->solve();

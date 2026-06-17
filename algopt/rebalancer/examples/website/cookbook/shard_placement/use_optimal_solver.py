@@ -32,7 +32,10 @@ from rebalancer.interface.thrift.v2.ProblemSpecs.thrift_types import (
     CapacitySpec,
     MinimizeMovementSpec,
 )
-from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import OptimalSolverSpec
+from rebalancer.interface.thrift.v2.SolverSpecs.thrift_types import (
+    OptimalSolverPackage,
+    OptimalSolverSpec,
+)
 
 
 def place_database_shards():
@@ -150,6 +153,7 @@ def place_database_shards():
     solver.addSolver(
         SolverSpecs(
             optimalSolverSpec=OptimalSolverSpec(
+                solverPackage=OptimalSolverPackage.HIGHS,
                 timeLimitMs=120000,  # 2 minute timeout
             )
         )
