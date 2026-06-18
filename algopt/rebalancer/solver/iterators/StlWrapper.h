@@ -16,6 +16,8 @@
 
 #include "algopt/rebalancer/solver/iterators/Abstract.h"
 
+#include <utility>
+
 namespace facebook::rebalancer {
 
 // Implementation of an AbstractIterator which wraps an STL-compliant iterator.
@@ -26,7 +28,7 @@ class StlWrapperIterator
   StlWrapperIterator(
       std::shared_ptr<const Container> container,
       Iterator iterator)
-      : container_(container), iterator_(iterator) {}
+      : container_(std::move(container)), iterator_(std::move(iterator)) {}
 
   void operator++() {
     ++iterator_;
@@ -53,18 +55,37 @@ class StlWrapperIterator
   Iterator iterator_;
 };
 
+namespace detail {
+template <typename Container>
+auto makeStlWrapperImpls(Container container) {
+  using Iter =
+      StlWrapperIterator<Container, typename Container::const_iterator>;
+  const auto pointer = std::make_shared<Container>(std::move(container));
+  return std::pair{
+      std::make_shared<Iter>(pointer, pointer->begin()),
+      std::make_shared<Iter>(pointer, pointer->end())};
+}
+} // namespace detail
+
 // Wraps an STL-compliant container as an AbstractContainer
 template <typename Container>
 AbstractContainer<typename Container::value_type> makeStlWrapperContainer(
     Container container) {
-  auto pointer = std::make_shared<Container>(std::move(container));
+  auto [begin, end] = detail::makeStlWrapperImpls(std::move(container));
   return AbstractContainer<typename Container::value_type>(
-      std::make_shared<
-          StlWrapperIterator<Container, typename Container::const_iterator>>(
-          pointer, pointer->begin()),
-      std::make_shared<
-          StlWrapperIterator<Container, typename Container::const_iterator>>(
-          pointer, pointer->end()));
+      std::move(begin), std::move(end));
+}
+
+template <typename Container>
+std::pair<
+    AbstractIterator<typename Container::value_type>,
+    AbstractIterator<typename Container::value_type>>
+makeStlWrapperIterators(Container container) {
+  using Element = typename Container::value_type;
+  auto [begin, end] = detail::makeStlWrapperImpls(std::move(container));
+  return {
+      AbstractIterator<Element>(std::move(begin)),
+      AbstractIterator<Element>(std::move(end))};
 }
 
 } // namespace facebook::rebalancer

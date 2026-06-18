@@ -44,7 +44,6 @@ class HotContainerSelector {
   GlobalObjective::View objectiveView_;
   const interface::HottestTraversalConfig& traversalConfig_;
   algopt::Timer findTimer_;
-  std::optional<AbstractContainer<entities::ContainerId>> containersTraversal_;
   std::optional<AbstractIterator<entities::ContainerId>> containersIterator_;
   std::optional<AbstractIterator<entities::ContainerId>> containersIteratorEnd_;
 };

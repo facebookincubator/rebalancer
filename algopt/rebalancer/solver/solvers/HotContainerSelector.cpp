@@ -34,9 +34,13 @@ namespace {
  * @param assignment Current assignment of objects to containers
  * @param enableObjectPotentialSorting Whether to use object potential for
  * sorting
- * @return Container of container IDs sorted by optimization priority
+ * @return [begin, end) iterators over container IDs in optimization-priority
+ * order
  */
-AbstractContainer<entities::ContainerId> resetHotContainerTraversal(
+std::pair<
+    AbstractIterator<entities::ContainerId>,
+    AbstractIterator<entities::ContainerId>>
+resetHotContainerTraversal(
     const GlobalObjective::View& objectiveView,
     uint64_t randomSeed,
     const Assignment& assignment,
@@ -44,7 +48,7 @@ AbstractContainer<entities::ContainerId> resetHotContainerTraversal(
     const interface::HottestTraversalConfig& traversalConfig) {
   if (enableObjectPotentialSorting) {
     if (objectiveView.size() == 0) {
-      return makeStlWrapperContainer(std::vector<entities::ContainerId>());
+      return makeStlWrapperIterators(std::vector<entities::ContainerId>());
     }
     const std::function<entities::ContainerId(ObjectPotential)> transform =
         [&assignment](
@@ -52,11 +56,12 @@ AbstractContainer<entities::ContainerId> resetHotContainerTraversal(
       return assignment.getContainer(objectPotential.objectId);
     };
     // TODO: take objects from all objectives in the view
-    return makeDeduperContainer(makeTransformContainer(
+    const auto container = makeDeduperContainer(makeTransformContainer(
         (*objectiveView.begin())->getObjectPotentials(true /* descending */),
         transform));
+    return {container.begin(), container.end()};
   }
-  return makeStlWrapperContainer(DescendingExpressionContainersTraversal(
+  return makeStlWrapperIterators(DescendingExpressionContainersTraversal(
       objectiveView,
       /*skipOptimalExpressions=*/true,
       traversalConfig,
@@ -152,14 +157,14 @@ std::optional<entities::ContainerId> HotContainerSelector::next(
 
 void HotContainerSelector::reset() {
   const algopt::TimerScope timerScope(findTimer_);
-  containersTraversal_ = resetHotContainerTraversal(
+  auto [begin, end] = resetHotContainerTraversal(
       objectiveView_,
       randomSeed_,
       problem_.assignment,
       enableObjectPotentialSorting_,
       traversalConfig_);
-  containersIterator_ = containersTraversal_->begin();
-  containersIteratorEnd_ = containersTraversal_->end();
+  containersIterator_ = std::move(begin);
+  containersIteratorEnd_ = std::move(end);
 
   // update the randomSeed so that if two containers are tied, then
   // tie resolution is dynamic
