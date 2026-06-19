@@ -163,7 +163,7 @@ BENCHMARK(UpdateChildPotentialsOnlyIfRequired) {
   suspend.rehire();
 }
 
-BENCHMARK(RefreshDescendingChildPotentialsAfterFewChildChanges) {
+BENCHMARK(RefreshPotentialsFewChildChanges) {
   folly::BenchmarkSuspender suspend;
   const std::shared_ptr<const entities::Universe> universe =
       std::make_shared<const entities::Universe>();
