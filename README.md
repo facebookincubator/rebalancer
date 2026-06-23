@@ -68,8 +68,8 @@ cap.name() = "memory_capacity"; cap.scope() = "host"; cap.dimension() = "memory"
 solver->addConstraint(cap);
 
 LocalSearchSolverSpec ls;
-ls.moveTypeList() = {makeMoveTypeSpec(SingleMoveTypeSpec{}),
-                     makeMoveTypeSpec(SwapMoveTypeSpec{})};
+ls.moveTypeList() = {ProblemSolver::makeMoveTypeSpec(SingleMoveTypeSpec{}),
+                     ProblemSolver::makeMoveTypeSpec(SwapMoveTypeSpec{})};
 solver->addSolver(ls);
 
 auto solution = solver->solve();
