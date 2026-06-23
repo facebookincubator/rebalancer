@@ -232,6 +232,7 @@ jobs:
           ${{ matrix.py == 'cp312' && '3.12' ||
               matrix.py == 'cp313' && '3.13' ||
               '3.14' }}
+        allow-prereleases: true
 
     - name: Install wheel and run smoke test
       run: |
