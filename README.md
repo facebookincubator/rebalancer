@@ -152,6 +152,28 @@ ninja
 sudo dnf install boost-devel.x86_64 fbthrift-devel.x86_64 glog-devel.x86_64 gtest-devel.x86_64 gmock-devel.x86_64 fmt-devel.x86_64
 ```
 
+#### After Building
+
+The default build produces the Rebalancer library. To build and run the bundled
+examples, pass `-DTESTS=ON` to CMake and rebuild:
+
+```bash
+# From rebalancer/build/
+cmake -GNinja -DTESTS=ON -DCMAKE_BUILD_TYPE=Debug ..
+ninja TasksOnHosts.exe
+./TasksOnHosts.exe
+```
+
+This runs the tasks-on-hosts example — distributing tasks across hosts by memory
+capacity — and prints the resulting assignment to stdout.
+
+More examples are in `algopt/rebalancer/examples/` (shard allocation, web
+balancing, knapsack, and others). Each `.cpp` file in that tree is built as a
+standalone executable when `-DTESTS=ON` is set.
+
+For **Python usage**, the source build does not produce a Python package.
+Use `pip install rebalancer` instead (see [PyPI](#pypi) below).
+
 ## Development Setup
 
 ### Pre-commit hooks
