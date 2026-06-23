@@ -16,6 +16,66 @@ There is a finite (but easily extensible) set of predefined expressions that can
 
 Users interact with Rebalancer via an interface which is available in C++ and Python.
 
+## Quick Example
+
+Four tasks, two hosts, one capacity constraint — `host0` starts overloaded with
+three tasks and `host1` has one. Rebalancer finds a balanced 2-2 assignment using
+local search or, optionally, a MIP solver backed by HiGHS, Gurobi, or FICO Xpress:
+
+**Python**
+
+```python
+from rebalancer import ProblemSolver
+from rebalancer.specs import (
+    CapacitySpec, ConstraintSpec, LocalSearchSolverSpec,
+    MoveTypeSpec, SingleMoveTypeSpec, SwapMoveTypeSpec, SolverSpec,
+)
+
+solver = ProblemSolver(service_name="rebalancer", service_scope="example")
+(solver
+    .set_object_name("task")
+    .set_container_name("host")
+    .set_assignment({"host0": ["task0", "task1", "task2"], "host1": ["task3"]})
+    .add_object_dimension("memory", {"task0": 10, "task1": 10, "task2": 10, "task3": 10})
+    .add_container_dimension("memory", {}, default_value=20.0)
+    .add_constraint(ConstraintSpec(capacitySpec=CapacitySpec(
+        name="memory_capacity", scope="host", dimension="memory")))
+    .add_solver(SolverSpec(localSearchSolverSpec=LocalSearchSolverSpec(
+        moveTypeList=[MoveTypeSpec(singleMoveTypeSpec=SingleMoveTypeSpec()),
+                      MoveTypeSpec(swapMoveTypeSpec=SwapMoveTypeSpec())])))
+)
+solution = solver.solve()
+print(solution["assignment"])
+# → e.g. {'task0': 'host1', 'task1': 'host0', 'task2': 'host0', 'task3': 'host1'}
+```
+
+**C++**
+
+```cpp
+auto solver = ProblemSolverFactory::makeProblemSolver("rebalancer", "example");
+solver->setObjectName("task");
+solver->setContainerName("host");
+solver->setAssignment({
+    {"host0", {"task0", "task1", "task2"}},
+    {"host1", {"task3"}},
+});
+solver->addObjectDimension("memory",
+    {{"task0", 10}, {"task1", 10}, {"task2", 10}, {"task3", 10}});
+solver->addContainerDimension("memory", {}, /*defaultValue=*/ 20.0);
+
+CapacitySpec cap;
+cap.name() = "memory_capacity"; cap.scope() = "host"; cap.dimension() = "memory";
+solver->addConstraint(cap);
+
+LocalSearchSolverSpec ls;
+ls.moveTypeList() = {makeMoveTypeSpec(SingleMoveTypeSpec{}),
+                     makeMoveTypeSpec(SwapMoveTypeSpec{})};
+solver->addSolver(ls);
+
+auto solution = solver->solve();
+// solution.assignment() maps task → host
+```
+
 ## Installation
 
 ### Ubuntu
