@@ -237,4 +237,12 @@ jobs:
     - name: Install wheel and run smoke test
       run: |
         pip install wheelhouse/rebalancer-*-manylinux*.whl
-        python tools/wheels/test_bindings.py -v
+        # Minimal import check first so we can distinguish import-time crashes
+        # (patchelf .init_array corruption) from test-execution crashes.
+        python -X faulthandler -c "
+        from rebalancer import ProblemSolver
+        ps = ProblemSolver(service_name='rebalancer', service_scope='glibc-test')
+        assert ps.ping() == 4, f'ping returned {ps.ping()}'
+        print('import + ping ok')
+        "
+        python -X faulthandler tools/wheels/test_bindings.py -v
