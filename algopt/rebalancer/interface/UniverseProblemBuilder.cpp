@@ -327,6 +327,10 @@ void UniverseProblemBuilder::enableStableAsMuchAsPossible() {
   universe_.setStableOptimization(true);
 }
 
+void UniverseProblemBuilder::setGroupBackedDynamicDimensions(bool enable) {
+  useGroupBackedDynamicDimensions_ = enable;
+}
+
 void UniverseProblemBuilder::setFeasibilityTolerance(
     double /* feasibilityTolerance */) {}
 

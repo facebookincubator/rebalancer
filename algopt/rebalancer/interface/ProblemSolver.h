@@ -138,6 +138,11 @@ class ProblemSolver {
   // the entire solve.
   ProblemSolver& enableRestrictMovingObjectOnlyOnce();
 
+  // Store partition-backed dynamic dimensions in group-keyed form: O(groups)
+  // instead of O(objects). Default is expanded object-keyed storage. Must be
+  // called before addDynamicObjectDimension() calls.
+  ProblemSolver& setGroupBackedDynamicDimensions(bool enable);
+
   // This function enables an internal optimization called `StableStayed`.
   // Essentially, this optimization reduces the number of equivalence sets
   // created by the solver. This optimization is only triggered if complex

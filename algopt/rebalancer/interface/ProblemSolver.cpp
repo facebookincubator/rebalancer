@@ -230,6 +230,12 @@ ProblemSolver& ProblemSolver::enableRestrictMovingObjectOnlyOnce() {
   return *this;
 }
 
+ProblemSolver& ProblemSolver::setGroupBackedDynamicDimensions(bool enable) {
+  REBALANCER_PROBLEM_SETUP_TIMER_SCOPE();
+  getProblemBuilder().setGroupBackedDynamicDimensions(enable);
+  return *this;
+}
+
 ProblemSolver& ProblemSolver::enableStableAsMuchAsPossible() {
   REBALANCER_PROBLEM_SETUP_TIMER_SCOPE();
   getProblemBuilder().enableStableAsMuchAsPossible();

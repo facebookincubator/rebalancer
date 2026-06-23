@@ -49,13 +49,6 @@ struct ProblemConfigs {
   std::optional<std::string> decompositionScopeName;
   bool enableParallelizedLpBuilding = false;
   bool useDynamicObjectOrdering = false;
-  // TEMPORARY: When true, enables compact group-keyed storage for dynamic
-  // object dimensions. Keep disabled by default while rollout validates parity.
-  // Static because `UniverseProblemBuilder` does not carry `ProblemConfigs`;
-  // this keeps the rollout knob available without threading config through the
-  // builder API surface for a temporary experiment.
-  // Remove once the feature is fully validated and enabled unconditionally.
-  static inline bool useCompactDynamicDimensions = false;
   bool enableParallelizedBoundsComputing = false;
   bool addMetricsExprsToOrchestrator = false;
 

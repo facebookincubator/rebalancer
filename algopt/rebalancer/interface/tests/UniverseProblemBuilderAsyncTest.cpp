@@ -13,10 +13,8 @@
 // limitations under the License.
 
 #include "algopt/rebalancer/interface/tests/UniverseProblemBuilderTestBase.h"
-#include "algopt/rebalancer/solver/utils/ProblemConfigs.h"
 
 #include <folly/container/F14Set.h>
-#include <folly/ScopeGuard.h>
 #include <gtest/gtest.h>
 
 namespace facebook::rebalancer::interface::tests {
@@ -130,12 +128,50 @@ TEST_P(UniverseProblemBuilderAsyncTest, ManyDynamicDimensionsScopesPartitions) {
 
 TEST_P(
     UniverseProblemBuilderAsyncTest,
-    CompactDynamicDimensionKeepsGroupBackedStorage) {
-  const auto resetFlag = folly::makeGuard(
-      [] { ProblemConfigs::useCompactDynamicDimensions = false; });
-  ProblemConfigs::useCompactDynamicDimensions = true;
-
+    DynamicDimensionDefaultsToObjectBackedStorage) {
   auto builder = getBuilder();
+  builder.setAssignment(
+      folly::F14FastMap<std::string, std::vector<std::string>>{
+          {"container_0", {"object_0", "object_2"}},
+          {"container_1", {"object_1"}}});
+  builder.addScope(
+      "scope",
+      folly::F14FastMap<std::string, std::vector<std::string>>{
+          {"scopeItem_0", {"container_0"}}, {"scopeItem_1", {"container_1"}}});
+  builder.addPartition(
+      "partition",
+      folly::F14FastMap<std::string, std::vector<std::string>>{
+          {"group_0", {"object_0", "object_1"}}, {"group_1", {"object_2"}}});
+  builder.addDynamicObjectDimension(
+      "expanded_dim",
+      "scope",
+      "partition",
+      folly::F14FastMap<std::string, folly::F14FastMap<std::string, double>>{
+          {"scopeItem_0", {{"group_0", 7}}}, {"scopeItem_1", {{"group_1", 4}}}},
+      1);
+
+  const auto universe = builder.build();
+  const auto dimId = universe->getDimensionId("expanded_dim");
+  const auto& dimension = universe->getObjects().getDimension(dimId).only();
+  EXPECT_TRUE(dimension.isDynamic());
+
+  const auto scopeId = universe->getScopeId("scope");
+  const auto si0 = universe->getScopeItemId(scopeId, "scopeItem_0");
+  const auto si1 = universe->getScopeItemId(scopeId, "scopeItem_1");
+
+  const auto& storage0 = dimension.values(si0);
+  const auto objectValues = storage0.asMapOrNull();
+  ASSERT_NE(nullptr, objectValues);
+
+  EXPECT_EQ(7, dimension.getValue(universe->getObjectId("object_0"), si0));
+  EXPECT_EQ(7, dimension.getValue(universe->getObjectId("object_1"), si0));
+  EXPECT_EQ(1, dimension.getValue(universe->getObjectId("object_2"), si0));
+  EXPECT_EQ(4, dimension.getValue(universe->getObjectId("object_2"), si1));
+}
+
+TEST_P(UniverseProblemBuilderAsyncTest, GroupBackedDynamicDimensionStorage) {
+  auto builder = getBuilder();
+  builder.setGroupBackedDynamicDimensions(/*enable=*/true);
   builder.setAssignment(
       folly::F14FastMap<std::string, std::vector<std::string>>{
           {"container_0", {"object_0", "object_2"}},

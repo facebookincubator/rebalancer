@@ -142,6 +142,8 @@ class ProblemSolverBinding {
 
   void enableStableAsMuchAsPossible();
 
+  void setGroupBackedDynamicDimensions(bool enable);
+
   int32_t getCurrentGoalIndex() const;
 
   std::string getRunId() const;

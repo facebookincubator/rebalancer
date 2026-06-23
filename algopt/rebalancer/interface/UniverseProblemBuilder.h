@@ -20,7 +20,6 @@
 #include "algopt/rebalancer/entities/Universe.h"
 #include "algopt/rebalancer/interface/thrift/gen-cpp2/ProblemSolver_visitation.h"
 #include "algopt/rebalancer/interface/thrift/gen-cpp2/SolverSpecs_visitation.h"
-#include "algopt/rebalancer/solver/utils/ProblemConfigs.h"
 
 #include <folly/container/irange.h>
 #include <folly/coro/BlockingWait.h>
@@ -205,6 +204,7 @@ class UniverseProblemBuilder {
 
   void enableRestrictMovingObjectOnlyOnce();
   void enableStableAsMuchAsPossible();
+  void setGroupBackedDynamicDimensions(bool enable);
   void setFeasibilityTolerance(double feasibilityTolerance);
 
   void setConstraintPolicy(ConstraintPolicy policy);
@@ -348,6 +348,7 @@ class UniverseProblemBuilder {
   ConstraintParams constraintParams_;
   constexpr static std::string_view kDimensionFieldName = "dimension";
   std::unique_ptr<AsyncConfig> asyncConfig_{nullptr};
+  bool useGroupBackedDynamicDimensions_{false};
 };
 
 // implementations
@@ -468,7 +469,7 @@ folly::coro::Task<void> UniverseProblemBuilder::addDynamicObjectDimensionImpl(
 
   const auto totalObjects = universe_.getObjects()->numObjects;
 
-  if (ProblemConfigs::useCompactDynamicDimensions) {
+  if (useGroupBackedDynamicDimensions_) {
     entities::Map<
         entities::ScopeItemId,
         std::shared_ptr<const entities::Map<entities::GroupId, double>>>

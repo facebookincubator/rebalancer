@@ -168,6 +168,9 @@ unique class ProblemSolverBinding {
   @output_name(py="enableStableAsMuchAsPossible")
   mut void enableStableAsMuchAsPossible() throws;
 
+  @output_name(py="setGroupBackedDynamicDimensions")
+  mut void setGroupBackedDynamicDimensions(bool enable) throws;
+
   @output_name(py="getCurrentGoalIndex")
   i32 getCurrentGoalIndex() throws;
 
