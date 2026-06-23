@@ -32,6 +32,7 @@ wheel="$2"
 # whatever the container has. The >=0.18 release is pre-release on PyPI
 # so --pre is required to find it.
 pip install --quiet --pre "patchelf>=0.18"
+pip install --quiet "lief>=0.14"
 echo "patchelf version: $(patchelf --version)"
 
 # Pre-clear long getdeps RPATHs with chrpath before auditwheel runs.
@@ -88,16 +89,142 @@ for lib_dir in $(ls -d /tmp/fbcode_builder_getdeps-*/installed/*/lib \
 done
 echo "Done pre-stripping debug symbols."
 
+# Record original NEEDED entries from every getdeps-installed shared lib.
+# After auditwheel+patchelf runs, some NEEDED entries in the bundled libs
+# may be corrupted to empty strings (patchelf --replace-needed writes offset 0
+# instead of the correct offset for the renamed SONAME).  We use this snapshot
+# to repair them with lief below.
+echo "Snapshotting original NEEDED entries..."
+python3 - <<'PYEOF' > /tmp/repair_linux_needed.json
+import json, subprocess, glob, os, re
+
+snapshot = {}   # soname_of_lib -> [original_needed_sonames]
+for lib_dir in glob.glob('/tmp/fbcode_builder_getdeps-*/installed/*/lib') + \
+               glob.glob('/tmp/fbcode_builder_getdeps-*/installed/*/lib64'):
+    for so in glob.glob(f'{lib_dir}/*.so') + glob.glob(f'{lib_dir}/*.so.*'):
+        r = subprocess.run(['readelf', '--wide', '-d', so],
+                           capture_output=True, text=True)
+        soname = None
+        needed = []
+        for line in r.stdout.splitlines():
+            m = re.search(r'\[([^\]]+)\]', line)
+            if not m:
+                continue
+            val = m.group(1)
+            if '(SONAME)' in line:
+                soname = val
+            elif '(NEEDED)' in line:
+                needed.append(val)
+        if soname:
+            snapshot[soname] = needed
+json.dump(snapshot, sys.stdout)
+import sys
+PYEOF
+echo "Snapshot written."
+
 LD_LIBRARY_PATH="$(ls -d /tmp/fbcode_builder_getdeps-*/installed/*/lib \
                           /tmp/fbcode_builder_getdeps-*/installed/*/lib64 \
                        2>/dev/null | tr '\n' ':'):${LD_LIBRARY_PATH:-}" \
     auditwheel repair -w "$dest_dir" "$wheel"
 
+# Post-repair lief fix: patchelf 0.18.0 --replace-needed can write string-
+# table offset 0 (empty string) instead of the correct offset for the new
+# hash-suffixed SONAME.  Use the pre-repair snapshot and lief to restore any
+# corrupted NEEDED entries.  lief rebuilds the ELF correctly, updating all
+# relocations (including .init_array) so no constructors are misaddressed.
+echo "Post-repair lief NEEDED fixup..."
+python3 - "$dest_dir" /tmp/repair_linux_needed.json <<'PYEOF'
+import sys, json, zipfile, tempfile, glob, os, re, shutil
+import lief
+
+dest = sys.argv[1]
+snapshot = json.load(open(sys.argv[2]))   # original_soname -> [original_needed_sonames]
+
+for whl in glob.glob(f'{dest}/*.whl'):
+    with tempfile.TemporaryDirectory() as tmp:
+        with zipfile.ZipFile(whl) as zf:
+            zf.extractall(tmp)
+
+        # Collect bundled libs: new_soname -> file_path
+        bundled = {}
+        for so in glob.glob(f'{tmp}/**/rebalancer.libs/*.so*', recursive=True):
+            elf = lief.parse(so)
+            if elf is None:
+                continue
+            sn = elf.get(lief.ELF.DYNAMIC_TAGS.SONAME)
+            if sn:
+                bundled[sn.name] = so
+
+        # Build mapping: original_soname -> new_soname (by matching filenames)
+        # auditwheel inserts a hash between lib name and version, e.g.
+        # libfolly.so.0.58.0-dev -> libfolly-92ded3c6.so.0.58.0-dev
+        orig_to_new = {}
+        for new_sn, path in bundled.items():
+            # Strip the hash suffix: libfoo-XXXXXXXX.so.X -> libfoo.so.X
+            orig = re.sub(r'-[0-9a-f]{8}(?=\.)', '', new_sn)
+            if orig != new_sn:
+                orig_to_new[orig] = new_sn
+
+        if not orig_to_new:
+            print('No SONAME renames detected; skipping lief fixup.')
+            continue
+
+        print(f'SONAME renames: {orig_to_new}')
+
+        # Fix each .so in the wheel
+        fixed = 0
+        for root, _, files in os.walk(tmp):
+            for fname in files:
+                if '.so' not in fname:
+                    continue
+                path = os.path.join(root, fname)
+                elf = lief.parse(path)
+                if elf is None:
+                    continue
+                changed = False
+                for entry in elf.dynamic_entries:
+                    if entry.tag != lief.ELF.DYNAMIC_TAGS.NEEDED:
+                        continue
+                    if entry.name == '':
+                        # Determine the correct name: look at original NEEDED
+                        # entries for this lib (matched by SONAME) and find
+                        # which one maps to a bundled SONAME.
+                        sn_entry = elf.get(lief.ELF.DYNAMIC_TAGS.SONAME)
+                        my_soname = sn_entry.name if sn_entry else ''
+                        orig_needed = snapshot.get(my_soname, [])
+                        for on in orig_needed:
+                            nn = orig_to_new.get(on)
+                            if nn:
+                                # Check not already referenced by a non-empty entry
+                                already = any(
+                                    e.tag == lief.ELF.DYNAMIC_TAGS.NEEDED and
+                                    e.name == nn
+                                    for e in elf.dynamic_entries)
+                                if not already:
+                                    print(f'  {fname}: fixing empty NEEDED -> {nn}')
+                                    entry.name = nn
+                                    changed = True
+                                    fixed += 1
+                                    break
+                if changed:
+                    elf.write(path)
+
+        print(f'lief fixup complete: {fixed} entries corrected.')
+
+        # Repack the wheel in-place
+        os.remove(whl)
+        with zipfile.ZipFile(whl, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for root, _, files in os.walk(tmp):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    zf.write(fp, os.path.relpath(fp, tmp))
+PYEOF
+
 # Post-repair sanity check: verify that all NEEDED entries in bundled libs
 # look like real library names (start with "lib" or are well-known
 # exceptions like "ld-linux*").  A patchelf string-table corruption produces
-# fragments of C++ mangled names or version strings ("ev", "3.1.5", …).
-# Fail loudly here rather than publishing a broken wheel.
+# fragments of C++ mangled names, version strings ("ev", "3.1.5", …), or
+# empty strings.  Fail loudly here rather than publishing a broken wheel.
 echo "Post-repair NEEDED sanity check..."
 python3 - "$dest_dir" <<'PYEOF'
 import sys, zipfile, tempfile, glob, subprocess, os, re
@@ -119,7 +246,8 @@ for whl in glob.glob(f'{dest}/*.whl'):
                 for line in r.stdout.splitlines():
                     if '(NEEDED)' not in line:
                         continue
-                    m = re.search(r'\[([^\]]+)\]', line)
+                    # Use * (not +) to also catch empty-string NEEDED entries.
+                    m = re.search(r'\[([^\]]*)\]', line)
                     if not m:
                         continue
                     needed = m.group(1)
