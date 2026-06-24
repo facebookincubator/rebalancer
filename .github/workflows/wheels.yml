@@ -162,10 +162,26 @@ jobs:
                     zf.extractall(tmpdir)
                 for root, _, files in os.walk(tmpdir):
                     for f in files:
-                        if '.so' in f:
-                            subprocess.run(
-                                ['strip', '--strip-unneeded', os.path.join(root, f)],
-                                check=True)
+                        if '.so' not in f:
+                            continue
+                        fp = os.path.join(root, f)
+                        rel = os.path.relpath(fp, tmpdir)
+                        # Skip bundled deps (rebalancer.libs/) and the
+                        # internal shared library (_lib/librebalancer.so).
+                        # auditwheel's patchelf extends .dynstr in these files
+                        # by adding a new PT_LOAD segment; strip --strip-unneeded
+                        # then fails to re-place .dynstr in that segment and
+                        # leaves it unmapped, causing glibc 2.39 to find only
+                        # empty strings at DT_STRTAB.  These files are already
+                        # pre-stripped in repair_linux.sh before auditwheel runs
+                        # (strip --strip-unneeded on the getdeps sources), so
+                        # stripping them again here is a no-op on content but
+                        # dangerous on ELF structure.
+                        if 'rebalancer.libs' in rel or rel.startswith('rebalancer/_lib/'):
+                            continue
+                        subprocess.run(
+                            ['strip', '--strip-unneeded', fp],
+                            check=True)
                 # Regenerate RECORD so pip's integrity check passes after we
                 # modified the .so files.
                 record_path = next(
