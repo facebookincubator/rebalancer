@@ -144,15 +144,23 @@ for whl in glob.glob(f'{dest}/*.whl'):
         with zipfile.ZipFile(whl) as zf:
             zf.extractall(tmp)
 
+        # ELF dynamic tag constants — stable across lief versions.
+        DT_NEEDED = 1
+        DT_SONAME = 14
+
+        def tag_int(e):
+            t = e.tag
+            return t.value if hasattr(t, 'value') else int(t)
+
         # Collect bundled libs: new_soname -> file_path
         bundled = {}
         for so in glob.glob(f'{tmp}/**/rebalancer.libs/*.so*', recursive=True):
             elf = lief.parse(so)
             if elf is None:
                 continue
-            sn = elf.get(lief.ELF.DYNAMIC_TAGS.SONAME)
+            sn = next((e.name for e in elf.dynamic_entries if tag_int(e) == DT_SONAME), None)
             if sn:
-                bundled[sn.name] = so
+                bundled[sn] = so
 
         # Build mapping: original_soname -> new_soname (by matching filenames)
         # auditwheel inserts a hash between lib name and version, e.g.
@@ -181,23 +189,23 @@ for whl in glob.glob(f'{dest}/*.whl'):
                 if elf is None:
                     continue
                 changed = False
+                my_soname = next(
+                    (e.name for e in elf.dynamic_entries if tag_int(e) == DT_SONAME),
+                    '')
                 for entry in elf.dynamic_entries:
-                    if entry.tag != lief.ELF.DYNAMIC_TAGS.NEEDED:
+                    if tag_int(entry) != DT_NEEDED:
                         continue
                     if entry.name == '':
                         # Determine the correct name: look at original NEEDED
                         # entries for this lib (matched by SONAME) and find
                         # which one maps to a bundled SONAME.
-                        sn_entry = elf.get(lief.ELF.DYNAMIC_TAGS.SONAME)
-                        my_soname = sn_entry.name if sn_entry else ''
                         orig_needed = snapshot.get(my_soname, [])
                         for on in orig_needed:
                             nn = orig_to_new.get(on)
                             if nn:
                                 # Check not already referenced by a non-empty entry
                                 already = any(
-                                    e.tag == lief.ELF.DYNAMIC_TAGS.NEEDED and
-                                    e.name == nn
+                                    tag_int(e) == DT_NEEDED and e.name == nn
                                     for e in elf.dynamic_entries)
                                 if not already:
                                     print(f'  {fname}: fixing empty NEEDED -> {nn}')
