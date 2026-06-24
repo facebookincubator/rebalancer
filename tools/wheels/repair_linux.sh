@@ -32,7 +32,6 @@ wheel="$2"
 # whatever the container has. The >=0.18 release is pre-release on PyPI
 # so --pre is required to find it.
 pip install --quiet --pre "patchelf>=0.18"
-pip install --quiet "lief>=0.14"
 echo "patchelf version: $(patchelf --version)"
 
 # Pre-clear long getdeps RPATHs with chrpath before auditwheel runs.
@@ -126,111 +125,128 @@ LD_LIBRARY_PATH="$(ls -d /tmp/fbcode_builder_getdeps-*/installed/*/lib \
                        2>/dev/null | tr '\n' ':'):${LD_LIBRARY_PATH:-}" \
     auditwheel repair -w "$dest_dir" "$wheel"
 
-# Post-repair lief fix: patchelf 0.18.0 --replace-needed can write string-
-# table offset 0 (empty string) instead of the correct offset for the new
-# hash-suffixed SONAME.  Use the pre-repair snapshot and lief to restore any
-# corrupted NEEDED entries.  lief rebuilds the ELF correctly, updating all
-# relocations (including .init_array) so no constructors are misaddressed.
-echo "Post-repair lief NEEDED fixup..."
-python3 - "$dest_dir" /tmp/repair_linux_needed.json <<'PYEOF'
-import sys, json, zipfile, tempfile, glob, os, re, shutil
-import lief
+# Post-repair DT_STRTAB fixup: patchelf leaves DT_STRTAB in the dynamic
+# section pointing to its NEW extended string table (at a different offset)
+# while .dynstr section header still points to the OLD location.  readelf and
+# static tools use section headers → see correct strings; the runtime linker
+# uses DT_STRTAB → finds corrupted content (empty NEEDED names, etc.).
+#
+# Fix: surgically update DT_STRTAB in-place to match .dynstr's sh_addr.
+# This is an 8-byte binary patch — no sections are moved, no ELF rebuild.
+echo "Post-repair DT_STRTAB fixup..."
+python3 - "$dest_dir" <<'PYEOF'
+import sys, zipfile, tempfile, glob, os, struct
 
 dest = sys.argv[1]
-snapshot = json.load(open(sys.argv[2]))   # original_soname -> [original_needed_sonames]
+DT_NULL=0; DT_STRTAB=5; PT_DYNAMIC=2
+
+def fix_dt_strtab(path):
+    with open(path, 'r+b') as f:
+        data = bytearray(f.read())
+    if data[:4] != b'\x7fELF':
+        return False
+    ei_class, ei_data = data[4], data[5]
+    if ei_class not in (1, 2) or ei_data not in (1, 2):
+        return False
+    is64 = (ei_class == 2)
+    bo = '<' if ei_data == 1 else '>'
+
+    if is64:
+        e_phoff = struct.unpack_from(bo+'Q', data, 0x20)[0]
+        e_phentsize, e_phnum = struct.unpack_from(bo+'HH', data, 0x36)
+        e_shoff = struct.unpack_from(bo+'Q', data, 0x28)[0]
+        e_shentsize, e_shnum, e_shstrndx = struct.unpack_from(bo+'HHH', data, 0x3a)
+    else:
+        e_phoff = struct.unpack_from(bo+'I', data, 0x1c)[0]
+        e_phentsize, e_phnum = struct.unpack_from(bo+'HH', data, 0x2a)
+        e_shoff = struct.unpack_from(bo+'I', data, 0x20)[0]
+        e_shentsize, e_shnum, e_shstrndx = struct.unpack_from(bo+'HHH', data, 0x2e)
+
+    # Find .dynstr section address via section-header string table
+    shstr_off = e_shoff + e_shstrndx * e_shentsize
+    if is64:
+        shstr_file_off = struct.unpack_from(bo+'Q', data, shstr_off + 24)[0]
+        shstr_size     = struct.unpack_from(bo+'Q', data, shstr_off + 32)[0]
+    else:
+        shstr_file_off = struct.unpack_from(bo+'I', data, shstr_off + 16)[0]
+        shstr_size     = struct.unpack_from(bo+'I', data, shstr_off + 20)[0]
+    shstrtab = data[shstr_file_off:shstr_file_off + shstr_size]
+
+    dynstr_addr = None
+    for i in range(e_shnum):
+        sh = e_shoff + i * e_shentsize
+        sh_name = struct.unpack_from(bo+'I', data, sh)[0]
+        name_end = shstrtab.find(b'\x00', sh_name)
+        name = shstrtab[sh_name:name_end].decode('utf-8', errors='replace')
+        if name == '.dynstr':
+            dynstr_addr = struct.unpack_from(bo+('Q' if is64 else 'I'), data, sh + (16 if is64 else 12))[0]
+            break
+
+    if dynstr_addr is None:
+        return False
+
+    # Find PT_DYNAMIC segment
+    dyn_off = dyn_sz = None
+    for i in range(e_phnum):
+        ph = e_phoff + i * e_phentsize
+        p_type = struct.unpack_from(bo+'I', data, ph)[0]
+        if p_type == PT_DYNAMIC:
+            if is64:
+                dyn_off = struct.unpack_from(bo+'Q', data, ph + 8)[0]
+                dyn_sz  = struct.unpack_from(bo+'Q', data, ph + 32)[0]
+            else:
+                dyn_off = struct.unpack_from(bo+'I', data, ph + 4)[0]
+                dyn_sz  = struct.unpack_from(bo+'I', data, ph + 16)[0]
+            break
+
+    if dyn_off is None:
+        return False
+
+    esz = 16 if is64 else 8
+    patched = False
+    pos = dyn_off
+    while pos + esz <= dyn_off + dyn_sz:
+        d_tag = struct.unpack_from(bo+('q' if is64 else 'i'), data, pos)[0]
+        if d_tag == DT_NULL:
+            break
+        if d_tag == DT_STRTAB:
+            cur = struct.unpack_from(bo+('Q' if is64 else 'I'), data, pos + (8 if is64 else 4))[0]
+            if cur != dynstr_addr:
+                struct.pack_into(bo+('Q' if is64 else 'I'), data, pos + (8 if is64 else 4), dynstr_addr)
+                patched = True
+        pos += esz
+
+    if patched:
+        with open(path, 'wb') as f:
+            f.write(data)
+    return patched
 
 for whl in glob.glob(f'{dest}/*.whl'):
     with tempfile.TemporaryDirectory() as tmp:
         with zipfile.ZipFile(whl) as zf:
             zf.extractall(tmp)
 
-        # ELF dynamic tag constants — stable across lief versions.
-        DT_NEEDED = 1
-        DT_SONAME = 14
+        libs_dir = next(
+            (os.path.join(r, 'rebalancer.libs')
+             for r, ds, _ in os.walk(tmp) if 'rebalancer.libs' in ds),
+            None)
 
-        def tag_int(e):
-            t = e.tag
-            return t.value if hasattr(t, 'value') else int(t)
-
-        # Collect bundled libs: new_soname -> file_path
-        bundled = {}
-        for so in glob.glob(f'{tmp}/**/rebalancer.libs/*.so*', recursive=True):
-            elf = lief.parse(so)
-            if elf is None:
-                continue
-            sn = next((e.name for e in elf.dynamic_entries if tag_int(e) == DT_SONAME), None)
-            if sn:
-                bundled[sn] = so
-
-        # Build mapping: original_soname -> new_soname (by matching filenames)
-        # auditwheel inserts a hash between lib name and version, e.g.
-        # libfolly.so.0.58.0-dev -> libfolly-92ded3c6.so.0.58.0-dev
-        orig_to_new = {}
-        for new_sn, path in bundled.items():
-            # Strip the hash suffix: libfoo-XXXXXXXX.so.X -> libfoo.so.X
-            orig = re.sub(r'-[0-9a-f]{8}(?=\.)', '', new_sn)
-            if orig != new_sn:
-                orig_to_new[orig] = new_sn
-
-        if not orig_to_new:
-            print('No SONAME renames detected; skipping lief fixup.')
-            continue
-
-        print(f'SONAME renames: {orig_to_new}')
-
-        # Fix each .so in the wheel
-        # Only rewrite libs inside rebalancer.libs/ — the bundled deps that
-        # patchelf touched.  Do NOT rewrite _rebalancer.so or librebalancer.so;
-        # lief can mishandle Python extension ELFs and remove their dynamic section.
-        libs_dir = None
-        for root, dirs, _ in os.walk(tmp):
-            if 'rebalancer.libs' in dirs:
-                libs_dir = os.path.join(root, 'rebalancer.libs')
-                break
-
-        if libs_dir is None:
-            print('No rebalancer.libs/ found in wheel; skipping lief fixup.')
-        else:
-            fixed = 0
+        fixed = 0
+        if libs_dir:
             for fname in os.listdir(libs_dir):
                 if '.so' not in fname:
                     continue
-                path = os.path.join(libs_dir, fname)
-                elf = lief.parse(path)
-                if elf is None:
-                    continue
-                my_soname = next(
-                    (e.name for e in elf.dynamic_entries if tag_int(e) == DT_SONAME),
-                    '')
-                for entry in elf.dynamic_entries:
-                    if tag_int(entry) != DT_NEEDED:
-                        continue
-                    if entry.name == '':
-                        orig_needed = snapshot.get(my_soname, [])
-                        for on in orig_needed:
-                            nn = orig_to_new.get(on)
-                            if nn:
-                                already = any(
-                                    tag_int(e) == DT_NEEDED and e.name == nn
-                                    for e in elf.dynamic_entries)
-                                if not already:
-                                    print(f'  {fname}: fixing empty NEEDED -> {nn}')
-                                    entry.name = nn
-                                    fixed += 1
-                                    break
-                # Always rewrite through lief to fix the DT_STRTAB inconsistency
-                # patchelf introduces (DT_STRTAB points to a different location
-                # than .dynstr; lief rebuilds with them consistent).
-                elf.write(path)
+                if fix_dt_strtab(os.path.join(libs_dir, fname)):
+                    print(f'  {fname}: DT_STRTAB patched')
+                    fixed += 1
 
-            print(f'lief fixup complete: {fixed} entries corrected, all bundled libs rewritten.')
+        print(f'DT_STRTAB fixup: {fixed} libs patched.')
 
-        # Repack the wheel in-place
         os.remove(whl)
         with zipfile.ZipFile(whl, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for root, _, files in os.walk(tmp):
+            for r, _, files in os.walk(tmp):
                 for f in files:
-                    fp = os.path.join(root, f)
+                    fp = os.path.join(r, f)
                     zf.write(fp, os.path.relpath(fp, tmp))
 PYEOF
 
