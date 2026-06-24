@@ -179,16 +179,26 @@ for whl in glob.glob(f'{dest}/*.whl'):
         print(f'SONAME renames: {orig_to_new}')
 
         # Fix each .so in the wheel
-        fixed = 0
-        for root, _, files in os.walk(tmp):
-            for fname in files:
+        # Only rewrite libs inside rebalancer.libs/ — the bundled deps that
+        # patchelf touched.  Do NOT rewrite _rebalancer.so or librebalancer.so;
+        # lief can mishandle Python extension ELFs and remove their dynamic section.
+        libs_dir = None
+        for root, dirs, _ in os.walk(tmp):
+            if 'rebalancer.libs' in dirs:
+                libs_dir = os.path.join(root, 'rebalancer.libs')
+                break
+
+        if libs_dir is None:
+            print('No rebalancer.libs/ found in wheel; skipping lief fixup.')
+        else:
+            fixed = 0
+            for fname in os.listdir(libs_dir):
                 if '.so' not in fname:
                     continue
-                path = os.path.join(root, fname)
+                path = os.path.join(libs_dir, fname)
                 elf = lief.parse(path)
                 if elf is None:
                     continue
-                changed = False
                 my_soname = next(
                     (e.name for e in elf.dynamic_entries if tag_int(e) == DT_SONAME),
                     '')
@@ -196,32 +206,24 @@ for whl in glob.glob(f'{dest}/*.whl'):
                     if tag_int(entry) != DT_NEEDED:
                         continue
                     if entry.name == '':
-                        # Determine the correct name: look at original NEEDED
-                        # entries for this lib (matched by SONAME) and find
-                        # which one maps to a bundled SONAME.
                         orig_needed = snapshot.get(my_soname, [])
                         for on in orig_needed:
                             nn = orig_to_new.get(on)
                             if nn:
-                                # Check not already referenced by a non-empty entry
                                 already = any(
                                     tag_int(e) == DT_NEEDED and e.name == nn
                                     for e in elf.dynamic_entries)
                                 if not already:
                                     print(f'  {fname}: fixing empty NEEDED -> {nn}')
                                     entry.name = nn
-                                    changed = True
                                     fixed += 1
                                     break
-                # Always rewrite through lief, even if no entries were
-                # corrected. patchelf leaves DT_STRTAB pointing to a new
-                # string table that differs from what readelf/.dynstr shows.
-                # When lief rebuilds the ELF it sets DT_STRTAB = the rebuilt
-                # .dynstr, resolving the inconsistency that causes the runtime
-                # linker to find empty NEEDED strings.
+                # Always rewrite through lief to fix the DT_STRTAB inconsistency
+                # patchelf introduces (DT_STRTAB points to a different location
+                # than .dynstr; lief rebuilds with them consistent).
                 elf.write(path)
 
-        print(f'lief fixup complete: {fixed} entries corrected (all bundled libs rewritten).')
+            print(f'lief fixup complete: {fixed} entries corrected, all bundled libs rewritten.')
 
         # Repack the wheel in-place
         os.remove(whl)
