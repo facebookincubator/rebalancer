@@ -226,18 +226,16 @@ for whl in glob.glob(f'{dest}/*.whl'):
         with zipfile.ZipFile(whl) as zf:
             zf.extractall(tmp)
 
-        libs_dir = next(
-            (os.path.join(r, 'rebalancer.libs')
-             for r, ds, _ in os.walk(tmp) if 'rebalancer.libs' in ds),
-            None)
-
+        # Scan ALL .so files in the wheel — auditwheel's patchelf touches both
+        # the bundled deps (rebalancer.libs/) and librebalancer.so (_lib/).
         fixed = 0
-        if libs_dir:
-            for fname in os.listdir(libs_dir):
+        for root, _, files in os.walk(tmp):
+            for fname in files:
                 if '.so' not in fname:
                     continue
-                if fix_dt_strtab(os.path.join(libs_dir, fname)):
-                    print(f'  {fname}: DT_STRTAB patched')
+                path = os.path.join(root, fname)
+                if fix_dt_strtab(path):
+                    print(f'  {os.path.relpath(path, tmp)}: DT_STRTAB patched')
                     fixed += 1
 
         print(f'DT_STRTAB fixup: {fixed} libs patched.')
