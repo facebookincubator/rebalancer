@@ -481,7 +481,7 @@ Analyze utilization distribution:
 
 ## Related Specs
 
-- [BalanceSpec](balance-optimize/balance) - Even distribution (linear cost)
+- [BalanceSpec](balance) - Even distribution (linear cost)
 - [CapacitySpec](capacity) - Hard capacity limits
 - [MinimizeMovementSpec](movement/minimize-movement) - Reduce churn while maintaining headroom
 

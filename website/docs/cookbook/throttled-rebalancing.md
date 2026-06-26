@@ -253,5 +253,5 @@ Track rebalancing progress over rounds:
 
 - [MinimizeMovementSpec](../reference/movement/minimize-movement) - Control movement volume
 - [AvoidMovingSpec](../reference/movement/avoid-moving) - Pin specific objects
-- [BalanceSpec](../reference/balance-optimize/balance) - Balance goals driving movement
+- [BalanceSpec](../reference/balance) - Balance goals driving movement
 - [CapacitySpec](../reference/capacity) - Capacity constraints

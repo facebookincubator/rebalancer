@@ -232,5 +232,5 @@ Place replicas proportionally to DC capacity:
 
 - [GroupCountSpec](../reference/groups/group-count) - Control group presence per scope item
 - [ColocateGroupsSpec](../reference/groups/colocate-groups) - Control group spread
-- [BalanceSpec](../reference/balance-optimize/balance) - Balance resource utilization
+- [BalanceSpec](../reference/balance) - Balance resource utilization
 - [CapacitySpec](../reference/capacity) - Enforce capacity limits

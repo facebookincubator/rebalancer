@@ -532,7 +532,7 @@ Analyze failover coverage:
 
 - [CapacitySpec](capacity) - Basic capacity limits
 - [GroupCountSpec](groups/group-count) - Spread replicas across failure domains
-- [BalanceSpec](balance-optimize/balance) - Balance load
+- [BalanceSpec](balance) - Balance load
 
 ## Source Code
 

@@ -123,7 +123,7 @@ Don't minimize below a target (useful for avoiding under-utilization):
 | Spec | Minimizes | Use When |
 |------|-----------|----------|
 | **MinimizeNthLargestSpec** | Nth highest value | Want percentile-based optimization |
-| [BalanceSpec](balance) | Variance/imbalance | Want even distribution |
+| [BalanceSpec](../balance) | Variance/imbalance | Want even distribution |
 | [MinimizeSquaresSpec](minimize-squares) | Sum of squares | Want strong balance with quadratic penalty |
 | [CapacitySpec](../capacity) | Violations | Hard capacity limits |
 
@@ -140,7 +140,7 @@ Don't minimize below a target (useful for avoiding under-utilization):
 
 ## Related Specs
 
-- [BalanceSpec](balance) - Even distribution
+- [BalanceSpec](../balance) - Even distribution
 - [MinimizeSquaresSpec](minimize-squares) - Quadratic balance penalty
 - [CapacitySpec](../capacity) - Hard capacity limits
 
@@ -152,6 +152,6 @@ Don't minimize below a target (useful for avoiding under-utilization):
 
 ## Next Steps
 
-- Review [Balance Spec](balance) for standard balancing
+- Review [Balance Spec](../balance) for standard balancing
 - See [Minimize Squares](minimize-squares) for quadratic penalties
 - Check [Cookbook: Load Balancing](../../cookbook/load-balancing) for real-world examples

@@ -225,4 +225,4 @@ After each round:
 - [AvoidMovingSpec](../reference/movement/avoid-moving) - Pin migrated workloads
 - [NonAcceptingSpec](../reference/placement/non-accepting) - Freeze old datacenter
 - [MinimizeMovementSpec](../reference/movement/minimize-movement) - Reduce churn
-- [BalanceSpec](../reference/balance-optimize/balance) - Maintain balance during migration
+- [BalanceSpec](../reference/balance) - Maintain balance during migration

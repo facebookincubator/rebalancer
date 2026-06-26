@@ -279,7 +279,7 @@ solver.add_goal(
 ## Related Specs
 
 - [AvoidMovingSpec](../movement/avoid-moving) - Explicitly prevent specific objects from moving (constraint)
-- [BalanceSpec](../balance-optimize/balance) - Primary balancing goal (often paired with this)
+- [BalanceSpec](../balance) - Primary balancing goal (often paired with this)
 - [CapacitySpec](../capacity) - Capacity constraints (often paired with this)
 
 ## Source Code

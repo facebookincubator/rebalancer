@@ -151,6 +151,6 @@ For smaller problems (&lt;50 objects), get provably optimal solution:
 
 ## Related Goals and Constraints
 
-- [BalanceSpec](../reference/balance-optimize/balance) - Balance resources across scope items
+- [BalanceSpec](../reference/balance) - Balance resources across scope items
 - [CapacitySpec](../reference/capacity) - Limit resource usage
 - [MinimizeMovementSpec](../reference/movement/minimize-movement) - Reduce number of moves

@@ -424,7 +424,7 @@ Maximize within capacity limits:
 ## Related Specs
 
 - [MinimizeContainersSpec](minimize-containers) - Minimize containers used (consolidation)
-- [BalanceSpec](balance) - Even distribution (opposite intent)
+- [BalanceSpec](../balance) - Even distribution (opposite intent)
 - [UtilIncreaseCostSpec](../util-increase-cost) - Non-linear utilization preference
 
 ## Source Code
