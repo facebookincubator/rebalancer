@@ -405,7 +405,7 @@ Estimate cost savings from consolidation:
 ## Related Specs
 
 - [ToFreeSpec](../to-free) - Explicitly drain specific containers
-- [BalanceSpec](balance) - Balance load on remaining containers
+- [BalanceSpec](../balance) - Balance load on remaining containers
 - [CapacitySpec](../capacity) - Ensure capacity constraints during consolidation
 - [NonAcceptingSpec](../placement/non-accepting) - Gradual draining (block new placements)
 

@@ -630,5 +630,5 @@ calculate_savings(
 
 - [MinimizeContainersSpec](../reference/balance-optimize/minimize-containers) - Minimize containers used
 - [ToFreeSpec](../reference/to-free) - Explicitly drain hosts
-- [BalanceSpec](../reference/balance-optimize/balance) - Balance among packed hosts
+- [BalanceSpec](../reference/balance) - Balance among packed hosts
 - [CapacitySpec](../reference/capacity) - Capacity constraints

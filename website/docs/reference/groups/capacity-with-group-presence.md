@@ -737,7 +737,7 @@ def analyze_overhead_impact(solution, partition, presence_weights):
 
 - [CapacitySpec](../capacity) - Basic capacity limits (without presence weights)
 - [GroupCapacitySpec](group-capacity) - Group-based capacity (different model)
-- [BalanceSpec](../balance-optimize/balance) - Balance load
+- [BalanceSpec](../balance) - Balance load
 
 ## Source Code
 

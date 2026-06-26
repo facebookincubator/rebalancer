@@ -10,7 +10,7 @@ Minimize the sum of squares of container utilization for stronger balance enforc
 
 ## Overview
 
-`MinimizeSquaresSpec` minimizes the sum of squared utilization values across containers. This creates a stronger penalty for imbalance than linear variance, pushing the solver toward more even distribution. It's an alternative to [BalanceSpec](balance) with quadratic instead of linear imbalance cost.
+`MinimizeSquaresSpec` minimizes the sum of squared utilization values across containers. This creates a stronger penalty for imbalance than linear variance, pushing the solver toward more even distribution. It's an alternative to [BalanceSpec](../balance) with quadratic instead of linear imbalance cost.
 
 **Use this when**: You want very even distribution and are willing to accept more movement to achieve it. The squared penalty makes the solver work harder to eliminate imbalance.
 
@@ -409,7 +409,7 @@ Verify balance quality:
 
 ## Related Specs
 
-- [BalanceSpec](balance) - General balance (recommended for most use cases)
+- [BalanceSpec](../balance) - General balance (recommended for most use cases)
 - [UtilIncreaseCostSpec](../util-increase-cost) - Exponential penalty (maintains headroom)
 - [CapacitySpec](../capacity) - Hard capacity limits
 

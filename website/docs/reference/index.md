@@ -20,7 +20,7 @@ Rebalancer provides 40+ built-in specifications (specs) for defining goals and c
 
 | Name | Type | Description |
 |------|------|-------------|
-| [BalanceSpec](balance-optimize/balance) | Goal | Balance utilization across scope items |
+| [BalanceSpec](balance) | Goal | Balance utilization across scope items |
 | [CapacitySpec](capacity) | Both | Limit utilization within scope items |
 | [MinimizeMovementSpec](movement/minimize-movement) | Goal | Minimize number of moved objects |
 | [UtilIncreaseCostSpec](util-increase-cost) | Goal | Prefer moves to under-utilized containers |
@@ -83,7 +83,7 @@ Specs that can only be used as constraints (hard requirements):
 ### Both Goal and Constraint
 Specs that can be used as either:
 
-- [BalanceSpec](balance-optimize/balance)
+- [BalanceSpec](balance)
 - [CapacitySpec](capacity)
 - [GroupCountSpec](groups/group-count)
 - [GroupCapacitySpec](groups/group-capacity)
@@ -98,8 +98,8 @@ Specs that can be used as either:
 ## Filter by Use Case
 
 ### Load Balancing
-- [BalanceSpec](balance-optimize/balance) - Balance resources
-- [BalanceRatioSpec](balance-optimize/balance) - Balance ratios of dimensions
+- [BalanceSpec](balance) - Balance resources
+- [BalanceRatioSpec](balance) - Balance ratios of dimensions
 - [UtilIncreaseCostSpec](util-increase-cost) - Prefer less-utilized containers
 
 ### Capacity Management

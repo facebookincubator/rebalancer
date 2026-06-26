@@ -345,5 +345,5 @@ Estimate latency improvement from colocation:
 
 - [ColocateGroupsSpec](../reference/groups/colocate-groups) - Main spec for colocation/spreading
 - [GroupCountSpec](../reference/groups/group-count) - Diversity constraints
-- [BalanceSpec](../reference/balance-optimize/balance) - Resource balance
+- [BalanceSpec](../reference/balance) - Resource balance
 - [CapacitySpec](../reference/capacity) - Capacity constraints

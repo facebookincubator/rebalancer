@@ -689,6 +689,6 @@ assert total_cpu_quota <= total_cpu_capacity, "Quotas exceed capacity!"
 ## Related Goals and Constraints
 
 - [GroupCountSpec](../reference/groups/group-count) - Tenant isolation constraints
-- [BalanceSpec](../reference/balance-optimize/balance) - Balance within tenant allocations
+- [BalanceSpec](../reference/balance) - Balance within tenant allocations
 - [CapacitySpec](../reference/capacity) - Server capacity limits
 - [ColocateGroupsSpec](../reference/groups/colocate-groups) - Tenant colocation patterns

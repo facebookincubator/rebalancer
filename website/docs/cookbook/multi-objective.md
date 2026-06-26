@@ -426,6 +426,6 @@ Solve with different configurations and compare:
 
 ## Related Goals
 
-- [BalanceSpec](../reference/balance-optimize/balance) - Balance resource utilization
+- [BalanceSpec](../reference/balance) - Balance resource utilization
 - [MinimizeMovementSpec](../reference/movement/minimize-movement) - Minimize disruption
 - Understanding priority levels (tuple system) - see below

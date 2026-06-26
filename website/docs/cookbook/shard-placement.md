@@ -153,6 +153,6 @@ For &lt;20 shards, get provably optimal solution:
 ## Related Goals and Constraints
 
 - [CapacitySpec](../reference/capacity) - Enforce capacity limits
-- [BalanceSpec](../reference/balance-optimize/balance) - Balance resource utilization
+- [BalanceSpec](../reference/balance) - Balance resource utilization
 - [MinimizeMovementSpec](../reference/movement/minimize-movement) - Minimize data movement
 - [AvoidMovingSpec](../reference/movement/avoid-moving) - Pin specific shards
