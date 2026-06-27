@@ -34,4 +34,4 @@ See the README for solver-specific installation details.
 
 ## Next Steps
 
-Once installed, proceed to [Your First Problem](first-problem) to learn how to use Rebalancer.
+Once installed, proceed to [Tutorial: Build Your First Model](first-model) to learn how to use Rebalancer.

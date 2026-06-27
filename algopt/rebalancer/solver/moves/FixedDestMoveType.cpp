@@ -127,7 +127,7 @@ void FixedDestMoveType::getBundleMoveCandidates(
     const interface::ObjectsToExploreOptions& bundleOptions,
     folly::F14FastSet<std::pair<ObjectBundle, entities::ContainerId>>& moves) {
   Problem& problem = evaluator.getProblem();
-  const auto bundleHints = spec_.objectBundleFormationHints();
+  auto bundleHints = spec_.objectBundleFormationHints();
   const bool adjustBundleSizeForIncompleteBundles = bundleHints &&
       bundleHints.value().adjustBundleSizeForIncompleteBundles().value_or(
           false);

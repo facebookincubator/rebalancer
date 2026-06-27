@@ -130,11 +130,15 @@ MoveResult SwapMoveType::exploreAllAndGetBestResult(
   const auto& equivalenceSets = problem.getEquivalenceSets();
 
   std::optional<std::string> dimensionName;
+  std::optional<entities::ScopeItemId> dimensionScopeItemId;
   if (auto swapRatioDimension = config_.swapRatioDimension()) {
     dimensionName = folly::get_default(
         *swapRatioDimension->value(),
         universe.getEntityName(hotContainer),
         *swapRatioDimension->defaultValue());
+    const auto dimensionId = universe.getDimensionId(*dimensionName);
+    dimensionScopeItemId = getDimensionScopeItemIdForContainer(
+        universe, dimensionId, hotContainer);
   }
 
   PackerSet<entities::ObjectId> hotObjectsInEquivSet = {hotObject};
@@ -163,7 +167,8 @@ MoveResult SwapMoveType::exploreAllAndGetBestResult(
       hotObject,
       dynamicObjects,
       dimensionName,
-      equivalenceSets);
+      equivalenceSets,
+      dimensionScopeItemId);
 
   const auto numColdObjects = static_cast<int>(dynamicObjects.size());
   const auto shouldTryColdObjectBundle =

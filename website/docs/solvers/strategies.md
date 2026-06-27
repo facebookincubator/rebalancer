@@ -898,9 +898,8 @@ auto best = (solution1.objectiveValue < solution2.objectiveValue)
 - **Learn Local Search**: [Local Search Guide](local-search)
 - **Learn Optimal**: [Optimal Solver Guide](optimal)
 - **Performance Tuning**: [Performance Guide](performance)
-- **See Examples**: [Cookbook](../cookbook/)
 
 ## Related Documentation
 
 - [Solver Overview](overview) - Choosing solvers
-- [Goals vs Constraints](../core-concepts/goals-vs-constraints) - Priority strategies
+- [Goals vs Constraints](../core-concepts/overview#goals-and-constraints) - Priority strategies

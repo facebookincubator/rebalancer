@@ -118,18 +118,41 @@ int GlobalObjectiveValue::precisionCompare(
   return 0;
 }
 
-bool GlobalObjectiveValue::equals(
-    const GlobalObjectiveValue& value1,
-    const GlobalObjectiveValue& value2,
+bool GlobalObjectiveValue::isStrictlyBetter(
+    const GlobalObjectiveValue& candidate,
+    const GlobalObjectiveValue& current,
     const Precision& precision) {
-  return precisionCompare(value1, value2, precision) == 0;
-}
+  const auto candidateSize = candidate.size();
+  const auto currentSize = current.size();
+  // Uninitialized is treated as +inf (same convention as precisionCompare).
+  if (candidateSize == 0) {
+    return false; // +inf is never strictly better
+  }
+  if (currentSize == 0) {
+    return true; // any initialized value beats uninitialized (+inf)
+  }
+  const auto bothComplete = !candidate.isPartial() && !current.isPartial();
+  if (bothComplete && candidateSize != currentSize) [[unlikely]] {
+    throw std::runtime_error(
+        fmt::format("size1: {} != size2: {}", candidateSize, currentSize));
+  }
 
-bool GlobalObjectiveValue::lt(
-    const GlobalObjectiveValue& value1,
-    const GlobalObjectiveValue& value2,
-    const Precision& precision) {
-  return precisionCompare(value1, value2, precision) < 0;
+  const auto size = std::min(candidateSize, currentSize);
+  for (const auto i : folly::irange(size)) {
+    const auto compare = precision.compare(candidate.get(i), current.get(i));
+    if (compare < 0) {
+      return true; // significant improvement at this position: better
+    }
+    if (compare > 0) {
+      return false; // significant worsening at this position: not better
+    }
+    // Within tolerance: forbid 'current' from worsening to ensure that only
+    // strictly improving moves are classified as better.
+    if (candidate.get(i) > current.get(i)) {
+      return false;
+    }
+  }
+  return false; // all positions within tolerance: not strictly better
 }
 
 GlobalObjectiveValue GlobalObjectiveValue::add(
@@ -170,13 +193,6 @@ GlobalObjectiveValue GlobalObjectiveValue::subtract(
   }
 
   return difference;
-}
-
-bool GlobalObjectiveValue::gt(
-    const GlobalObjectiveValue& value1,
-    const GlobalObjectiveValue& value2,
-    const Precision& precision) {
-  return precisionCompare(value1, value2, precision) > 0;
 }
 
 string GlobalObjectiveValue::toString() const {

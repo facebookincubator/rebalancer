@@ -201,6 +201,13 @@ PackerSet<Input> getEqualSizeRandomSamplesFromEachSetIn(
   return sampledIds;
 }
 
+// Returns the scope item for a container when dimensionId identifies a dynamic
+// dimension. Static dimensions and out-of-scope containers return nullopt.
+std::optional<entities::ScopeItemId> getDimensionScopeItemIdForContainer(
+    const entities::Universe& universe,
+    entities::DimensionId dimensionId,
+    entities::ContainerId containerId);
+
 // Compute swap ratio between two objects based on a dimension.
 // Returns ceil(largerValue / smallerValue) when largerValue > smallerValue > 0,
 // otherwise returns 1 (fallback to 1:1 swap for zero or equal values).
@@ -208,12 +215,14 @@ PackerSet<Input> getEqualSizeRandomSamplesFromEachSetIn(
 // @param largerObject Object expected to have the larger dimension value
 // @param smallerObject Object expected to have the smaller dimension value
 // @param dimensionId Dimension ID to use for ratio calculation
+// @param dimensionScopeItemId Scope item to use for dynamic dimensions
 // @return Swap ratio: how many smallerObjects needed to match one largerObject
 size_t calculateSwapRatio(
     const entities::Universe& universe,
     entities::ObjectId largerObject,
     entities::ObjectId smallerObject,
-    entities::DimensionId dimensionId);
+    entities::DimensionId dimensionId,
+    std::optional<entities::ScopeItemId> dimensionScopeItemId = std::nullopt);
 
 /**
  * Generates ratio-aware implicit swap candidates for SwapMoveType.
@@ -234,7 +243,8 @@ std::vector<SwapCandidateImplicit> generateDimensionBasedSwapCandidates(
     entities::ObjectId hotObject,
     const ObjectStore& coldDynamicObjects,
     const std::optional<std::string>& dimensionName,
-    const EquivalenceSets& equivalenceSets);
+    const EquivalenceSets& equivalenceSets,
+    std::optional<entities::ScopeItemId> dimensionScopeItemId = std::nullopt);
 
 template <class Input>
 std::vector<Input> getRandomSampleWithReplacement(

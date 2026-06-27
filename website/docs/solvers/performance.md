@@ -990,7 +990,3 @@ for (const auto& params : parameter_sweep) {
 - **Local Search Details**: [Local Search Guide](local-search)
 - **Optimal Solver Details**: [Optimal Solver Guide](optimal)
 - **Advanced Strategies**: [Solver Strategies](strategies)
-
-## Related Documentation
-
-- [Cookbook](../cookbook/) - Performance patterns in examples

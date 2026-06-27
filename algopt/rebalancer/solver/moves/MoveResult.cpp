@@ -62,16 +62,18 @@ bool MoveResult::isValid() const {
 }
 
 bool MoveResult::isBetter(const Precision& precision) const {
-  return valid_ && GlobalObjectiveValue::lt(newValue_, oldValue_, precision);
+  return valid_ &&
+      GlobalObjectiveValue::isStrictlyBetter(newValue_, oldValue_, precision);
 }
 
 bool MoveResult::isNeutral(const Precision& precision) const {
-  return valid_ &&
-      GlobalObjectiveValue::equals(newValue_, oldValue_, precision);
+  // Neither strictly better nor strictly worse.
+  return valid_ && !isBetter(precision) && !isWorse(precision);
 }
 
 bool MoveResult::isWorse(const Precision& precision) const {
-  return valid_ && GlobalObjectiveValue::gt(newValue_, oldValue_, precision);
+  return valid_ &&
+      GlobalObjectiveValue::isStrictlyBetter(oldValue_, newValue_, precision);
 }
 
 const MoveSet& MoveResult::getMoveSet() const {

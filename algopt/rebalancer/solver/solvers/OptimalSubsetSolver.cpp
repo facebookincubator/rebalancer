@@ -84,7 +84,7 @@ static void updateSolverProfile(
   if (!profile) {
     return;
   }
-  const auto stageProfile = opt_solver_profile.optimalSolverProfile();
+  auto stageProfile = opt_solver_profile.optimalSolverProfile();
   if (!stageProfile) {
     return;
   }

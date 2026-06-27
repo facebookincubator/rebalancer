@@ -47,21 +47,50 @@ TEST(GlobalObjectiveValueTest, Basic) {
   EXPECT_EQ(1.0, val2.get(0));
 }
 
+// Regression test for local-search cycling. These are real objective tuples
+// from a cycle A->B->C->A: each step looked "better" under the old comparison
+// (the higher-priority component tied within tolerance while the lower-priority
+// one improved), letting the higher-priority component silently drift worse so
+// the solver cycled forever. isStrictlyBetter forbids worsening a tied
+// component, so the drift steps are rejected while a genuine (significant)
+// improvement is still accepted.
+TEST(GlobalObjectiveValueTest, IsStrictlyBetterForbidsTiedWorsening) {
+  const auto precision = createPrecision(); // absolute == relative == 1e-10
+  const GlobalObjectiveValue a({4.04519466830, 2.01836050018});
+  const GlobalObjectiveValue b({4.04519466852, 2.01836049997});
+  const GlobalObjectiveValue c({4.04519466872, 2.01836049905});
+
+  // Drift steps worsen the higher-priority component within tolerance.
+  EXPECT_FALSE(GlobalObjectiveValue::isStrictlyBetter(b, a, precision)); // A->B
+  EXPECT_FALSE(GlobalObjectiveValue::isStrictlyBetter(c, b, precision)); // B->C
+
+  // A genuine, significant improvement is still accepted.
+  EXPECT_TRUE(GlobalObjectiveValue::isStrictlyBetter(a, c, precision)); // C->A
+
+  // Sanity: clear improvement / worsening.
+  const GlobalObjectiveValue lo({1.0});
+  const GlobalObjectiveValue hi({2.0});
+  EXPECT_TRUE(GlobalObjectiveValue::isStrictlyBetter(lo, hi, precision));
+  EXPECT_FALSE(GlobalObjectiveValue::isStrictlyBetter(hi, lo, precision));
+  // Equal tuples are not strictly better.
+  EXPECT_FALSE(GlobalObjectiveValue::isStrictlyBetter(lo, lo, precision));
+}
+
 TEST(GlobalObjectiveValueTest, Comparators) {
   const auto precision = createPrecision();
   GlobalObjectiveValue val1, val2;
 
   // uninitialized are equal
-  EXPECT_TRUE(GlobalObjectiveValue::equals(val1, val2, precision));
+  EXPECT_EQ(0, GlobalObjectiveValue::precisionCompare(val1, val2, precision));
 
   // initialized < uninitialized
   val1.append(1.0);
-  EXPECT_TRUE(GlobalObjectiveValue::lt(val1, val2, precision));
-  EXPECT_TRUE(GlobalObjectiveValue::gt(val2, val1, precision));
+  EXPECT_LT(GlobalObjectiveValue::precisionCompare(val1, val2, precision), 0);
+  EXPECT_GT(GlobalObjectiveValue::precisionCompare(val2, val1, precision), 0);
 
   val2.append(-1.0);
-  EXPECT_TRUE(GlobalObjectiveValue::lt(val2, val1, precision));
-  EXPECT_TRUE(GlobalObjectiveValue::gt(val1, val2, precision));
+  EXPECT_LT(GlobalObjectiveValue::precisionCompare(val2, val1, precision), 0);
+  EXPECT_GT(GlobalObjectiveValue::precisionCompare(val1, val2, precision), 0);
 }
 
 TEST(GlobalObjectiveValueTest, Partial) {
@@ -75,8 +104,8 @@ TEST(GlobalObjectiveValueTest, Partial) {
   auto val2 = GlobalObjectiveValue::makeWithFixedSize(2);
   val2.append(0);
 
-  EXPECT_TRUE(GlobalObjectiveValue::lt(val2, val1, precision));
-  EXPECT_TRUE(GlobalObjectiveValue::gt(val1, val2, precision));
+  EXPECT_LT(GlobalObjectiveValue::precisionCompare(val2, val1, precision), 0);
+  EXPECT_GT(GlobalObjectiveValue::precisionCompare(val1, val2, precision), 0);
 
   EXPECT_EQ("(0, __)", val2.toString());
 }

@@ -92,15 +92,24 @@ std::pair<size_t, size_t> getBundleSizes(
     const entities::Universe& universe,
     entities::ObjectId hotObject,
     entities::ObjectId coldObject,
-    entities::DimensionId dimensionId) {
+    entities::DimensionId dimensionId,
+    std::optional<entities::ScopeItemId> dimensionScopeItemId) {
   const auto& objectDimension =
       universe.getObjects().getDimension(dimensionId).only();
-  const auto hotValue = objectDimension.getValue(hotObject);
-  const auto coldValue = objectDimension.getValue(coldObject);
+  const auto hotValue =
+      objectDimension.getValue(hotObject, dimensionScopeItemId);
+  const auto coldValue =
+      objectDimension.getValue(coldObject, dimensionScopeItemId);
 
   if (hotValue > coldValue && coldValue > 0) {
     return {
-        1, calculateSwapRatio(universe, hotObject, coldObject, dimensionId)};
+        1,
+        calculateSwapRatio(
+            universe,
+            hotObject,
+            coldObject,
+            dimensionId,
+            dimensionScopeItemId)};
   }
   if (coldValue > hotValue && hotValue > 0) {
     // TEMPORARY: When enableKToOneSwaps is false, degrade k:1 swaps to 1:1
@@ -109,7 +118,9 @@ std::pair<size_t, size_t> getBundleSizes(
       return {1, 1};
     }
     return {
-        calculateSwapRatio(universe, coldObject, hotObject, dimensionId), 1};
+        calculateSwapRatio(
+            universe, coldObject, hotObject, dimensionId, dimensionScopeItemId),
+        1};
   }
   return {1, 1};
 }
@@ -125,19 +136,31 @@ std::function<bool(entities::ContainerId)> getAcceptingContainersCheckFunc(
   };
 }
 
+std::optional<entities::ScopeItemId> getDimensionScopeItemIdForContainer(
+    const entities::Universe& universe,
+    entities::DimensionId dimensionId,
+    entities::ContainerId containerId) {
+  const auto& objectDimension =
+      universe.getObjects().getDimension(dimensionId).only();
+  if (!objectDimension.isDynamic()) {
+    return std::nullopt;
+  }
+  return universe.getScope(objectDimension.getScopeId())
+      .getScopeItemId(containerId);
+}
+
 size_t calculateSwapRatio(
     const entities::Universe& universe,
     const entities::ObjectId largerObject,
     const entities::ObjectId smallerObject,
-    const entities::DimensionId dimensionId) {
-  const auto largerValue = universe.getObjects()
-                               .getDimension(dimensionId)
-                               .only()
-                               .getValue(largerObject);
-  const auto smallerValue = universe.getObjects()
-                                .getDimension(dimensionId)
-                                .only()
-                                .getValue(smallerObject);
+    const entities::DimensionId dimensionId,
+    std::optional<entities::ScopeItemId> dimensionScopeItemId) {
+  const auto& objectDimension =
+      universe.getObjects().getDimension(dimensionId).only();
+  const auto largerValue =
+      objectDimension.getValue(largerObject, dimensionScopeItemId);
+  const auto smallerValue =
+      objectDimension.getValue(smallerObject, dimensionScopeItemId);
   if (smallerValue > 0 && largerValue > smallerValue) {
     return static_cast<size_t>(std::ceil(largerValue / smallerValue));
   }
@@ -150,7 +173,8 @@ std::vector<SwapCandidateImplicit> generateDimensionBasedSwapCandidates(
     entities::ObjectId hotObject,
     const ObjectStore& coldDynamicObjects,
     const std::optional<std::string>& dimensionName,
-    const EquivalenceSets& equivalenceSets) {
+    const EquivalenceSets& equivalenceSets,
+    std::optional<entities::ScopeItemId> dimensionScopeItemId) {
   const auto coldObjectsByEquivalenceSet =
       groupObjectsByEquivalenceSet(coldDynamicObjects, equivalenceSets);
 
@@ -197,8 +221,8 @@ std::vector<SwapCandidateImplicit> generateDimensionBasedSwapCandidates(
     assert(!coldObjectsInEquivSet.empty());
 
     const auto coldObject = coldObjectsInEquivSet.front();
-    const auto [hotBundleSize, coldBundleSize] =
-        getBundleSizes(universe, hotObject, coldObject, dimensionId);
+    const auto [hotBundleSize, coldBundleSize] = getBundleSizes(
+        universe, hotObject, coldObject, dimensionId, dimensionScopeItemId);
     if (hotBundleSize != 1 && coldBundleSize != 1) {
       throw std::runtime_error("Expect either 1:k or k:1 bundles");
     }

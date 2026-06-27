@@ -533,4 +533,3 @@ solver.addSolver(spec);
 ## Related Documentation
 
 - [Installation](../getting-started/installation) - Installing MIP solvers
-- [Cookbook](../cookbook/) - Examples using Optimal solver

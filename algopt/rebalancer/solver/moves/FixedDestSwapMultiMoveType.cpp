@@ -73,29 +73,37 @@ std::optional<MultiObjectSelectionConfig> createSwapRatioConfig(
       *swapRatioDimension.defaultValue());
 
   const auto swapRatioDimensionId = universe.getDimensionId(dimensionName);
+  const auto dimensionScopeItemId = getDimensionScopeItemIdForContainer(
+      universe, swapRatioDimensionId, hotContainer);
 
   // Need to find the server partition ID to get objects from groupId
   assert(rasMetadata.serverPartition().has_value());
   auto serverPartitionId =
       universe.getPartitionId(*rasMetadata.serverPartition());
 
-  // Create config with lambda that safely captures evaluator reference
-  // CRITICAL: Capture evaluator by reference - it's guaranteed to outlive the
-  // config usage since the caller (findBestMove) owns both the evaluator and
-  // uses the config immediately
+  // Create config with lambda that safely captures the universe reference.
+  // CRITICAL: Capture universe by reference - it refers to the problem's
+  // Universe, which is guaranteed to outlive the config usage since the caller
+  // (findBestMove) owns the evaluator/problem and uses the config immediately.
   MultiObjectSelectionConfig config;
   config.getBundleSizeForGroup =
-      [&evaluator, hotObject, swapRatioDimensionId, serverPartitionId](
-          entities::GroupId serverId) -> int {
+      [&universe,
+       hotObject,
+       swapRatioDimensionId,
+       serverPartitionId,
+       dimensionScopeItemId](entities::GroupId serverId) -> int {
     // Get any object from this server/group to calculate the swap ratio
-    const auto& universe2 = evaluator.getProblem().getUniverse();
-    const auto& serverPartition = universe2.getPartition(serverPartitionId);
+    const auto& serverPartition = universe.getPartition(serverPartitionId);
     const auto& objectsInGroup = serverPartition.getObjectIds(serverId);
     assert(!objectsInGroup.empty());
     const auto representativeColdObject = objectsInGroup[0];
 
     return static_cast<int>(calculateSwapRatio(
-        universe2, hotObject, representativeColdObject, swapRatioDimensionId));
+        universe,
+        hotObject,
+        representativeColdObject,
+        swapRatioDimensionId,
+        dimensionScopeItemId));
   };
 
   return config;

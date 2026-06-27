@@ -473,6 +473,29 @@ class SwapMoveTypeDirectionTest : public MoveTestBase {
     co_return buildUniverse();
   }
 
+  folly::coro::Task<std::shared_ptr<const entities::Universe>>
+  setUpUniverseOneToKDynamic() {
+    setInitialAssignment({
+        {"region1", {"replica1"}},
+        {"region2", {"replica2", "replica3", "replica4"}},
+    });
+    co_await addDynamicObjectDimension(
+        "rru",
+        scopeId("region"),
+        {{"region1",
+          {{"replica1", 3.0},
+           {"replica2", 1.0},
+           {"replica3", 1.0},
+           {"replica4", 1.0}}},
+         {"region2",
+          {{"replica1", 100.0},
+           {"replica2", 100.0},
+           {"replica3", 100.0},
+           {"replica4", 100.0}}}},
+        0.0);
+    co_return buildUniverse();
+  }
+
   // Setup for k:1: 3 small hot objects, 1 big cold object
   // container(1) has {replica1(1.0), replica2(1.0), replica3(1.0)}
   // container(2) has {replica4(3.0)}
@@ -488,6 +511,29 @@ class SwapMoveTypeDirectionTest : public MoveTestBase {
          {"replica2", 1.0},
          {"replica3", 1.0},
          {"replica4", 3.0}},
+        0.0);
+    co_return buildUniverse();
+  }
+
+  folly::coro::Task<std::shared_ptr<const entities::Universe>>
+  setUpUniverseKToOneDynamic() {
+    setInitialAssignment({
+        {"region1", {"replica1", "replica2", "replica3"}},
+        {"region2", {"replica4"}},
+    });
+    co_await addDynamicObjectDimension(
+        "rru",
+        scopeId("region"),
+        {{"region1",
+          {{"replica1", 1.0},
+           {"replica2", 1.0},
+           {"replica3", 1.0},
+           {"replica4", 3.0}}},
+         {"region2",
+          {{"replica1", 100.0},
+           {"replica2", 100.0},
+           {"replica3", 100.0},
+           {"replica4", 100.0}}}},
         0.0);
     co_return buildUniverse();
   }
@@ -540,6 +586,32 @@ CO_TEST_F(SwapMoveTypeDirectionTest, OneToK_MoveComposition) {
   EXPECT_EQ(3, counts.toSrc); // k=3 cold objects move in
 }
 
+CO_TEST_F(
+    SwapMoveTypeDirectionTest,
+    OneToK_DynamicDimensionUsesHotContainerScope) {
+  const auto universe = co_await setUpUniverseOneToKDynamic();
+  createProblem({const_expr(0, universe)}, const_expr(0, universe));
+
+  const auto spec = makeRatioSpec();
+  auto swapMoveType =
+      MockSwapMoveType(interface::LocalSearchSolverSpec{}, spec);
+
+  auto bestResult =
+      swapMoveType.exploreSwappingHotObjectWithObjectsInColdContainer(
+          getMovesEvaluator(),
+          container(1),
+          object(1),
+          container(2),
+          getMoveStatsAggregator());
+
+  EXPECT_EQ(4, getTotalMovesEvaluated());
+
+  const auto counts =
+      countMoveDirections(bestResult.getMoveSet(), container(1), container(2));
+  EXPECT_EQ(1, counts.toDst);
+  EXPECT_EQ(3, counts.toSrc);
+}
+
 // k:1 swap with k = ceil(3.0/1.0) = 3
 // The shared ratio-aware builder bundles the smaller hot side, and the chosen
 // hot object stays anchored in the bundle.
@@ -581,6 +653,36 @@ CO_TEST_F(SwapMoveTypeDirectionTest, KToOne_MoveComposition) {
       << "hotObject must always be anchored in the swap";
 
   // Reset to default
+  ProblemConfigs::enableKToOneSwaps = false;
+}
+
+CO_TEST_F(
+    SwapMoveTypeDirectionTest,
+    KToOne_DynamicDimensionUsesHotContainerScope) {
+  ProblemConfigs::enableKToOneSwaps = true;
+
+  const auto universe = co_await setUpUniverseKToOneDynamic();
+  createProblem({const_expr(0, universe)}, const_expr(0, universe));
+
+  const auto spec = makeRatioSpec();
+  auto swapMoveType =
+      MockSwapMoveType(interface::LocalSearchSolverSpec{}, spec);
+
+  auto bestResult =
+      swapMoveType.exploreSwappingHotObjectWithObjectsInColdContainer(
+          getMovesEvaluator(),
+          container(1),
+          object(3),
+          container(2),
+          getMoveStatsAggregator());
+
+  EXPECT_EQ(4, getTotalMovesEvaluated());
+
+  const auto counts =
+      countMoveDirections(bestResult.getMoveSet(), container(1), container(2));
+  EXPECT_EQ(3, counts.toDst);
+  EXPECT_EQ(1, counts.toSrc);
+
   ProblemConfigs::enableKToOneSwaps = false;
 }
 
