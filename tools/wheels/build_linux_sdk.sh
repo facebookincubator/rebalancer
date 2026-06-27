@@ -78,7 +78,7 @@ if [[ ! -f "$TEST_SOLVE_SRC" ]]; then
         -I"$REBALANCER_PREFIX/usr/local/include" \
         $EXTRA_INCLUDES \
         -L"$REBALANCER_PREFIX/usr/local/lib" \
-        -lrebalancer \
+        -lrebalancer -lfolly \
         -Wl,--allow-shlib-undefined \
         -o "$TEST_SOLVE_SRC" \
         /project/tools/packages/test_solve.cpp
