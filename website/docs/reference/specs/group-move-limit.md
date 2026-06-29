@@ -121,7 +121,7 @@ runnable unit test.
 A GroupMoveLimit with `groupLimits` of 2 for `group0` and 0 for `group1`: `group0`
 may move freely toward its preferred host while `group1` is pinned in place. Only
 `group0` ends up moving.
-([source](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupMoveLimitSpecTest.cpp#L115-L137))
+([source](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupMoveLimitSpecTest.cpp#L115-L137))
 
 <img src={useBaseUrl('/img/reference/group-move-limit/example-2.png')} alt="Per-group limit: only group0 moved" />
 
@@ -133,12 +133,12 @@ A global limit of `0` (normally pinning everything in place), but with
 still move to `host1` because moves *into* `host1` do not count; and `task3` can
 move out of `host1` because moves *out of* `host1` (not in the source whitelist) do
 not count either.
-([source](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupMoveLimitSpecTest.cpp#L139-L170))
+([source](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupMoveLimitSpecTest.cpp#L139-L170))
 
 <img src={useBaseUrl('/img/reference/group-move-limit/example-3.png')} alt="Filtering which moves count: moves to or from host1 are unaffected by the limit" />
 
 ## Source
 
-- Thrift definition: [`interface/thrift/ProblemSpecs.thrift`](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/thrift/ProblemSpecs.thrift) (`GroupMoveLimitSpec`)
-- SpecBuilder: [`materializer/spec_builder/GroupMoveLimitSpecBuilder.cpp`](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/materializer/spec_builder/GroupMoveLimitSpecBuilder.cpp)---the code that defines this spec's behavior
-- Tests and runnable examples: [`interface/tests/GroupMoveLimitSpecTest.cpp`](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupMoveLimitSpecTest.cpp)---the unit tests the snippets on this page are drawn from
+- Thrift definition: [`interface/thrift/ProblemSpecs.thrift`](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/thrift/ProblemSpecs.thrift) (`GroupMoveLimitSpec`)
+- SpecBuilder: [`materializer/spec_builder/GroupMoveLimitSpecBuilder.cpp`](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/materializer/spec_builder/GroupMoveLimitSpecBuilder.cpp)---the code that defines this spec's behavior
+- Tests and runnable examples: [`interface/tests/GroupMoveLimitSpecTest.cpp`](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupMoveLimitSpecTest.cpp)---the unit tests the snippets on this page are drawn from

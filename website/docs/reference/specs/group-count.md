@@ -202,7 +202,7 @@ hosts and 9 tasks, with `job0` (5 tasks) on `host0` and `job1` (4 tasks) on
 
 At most 70% of a job's tasks on one host. Rebalancer moves 2 tasks of `job0` from
 `host0` to `host1`, and 2 tasks of `job1` from `host1` to `host0`.
-([source](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L204-L254))
+([source](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L204-L254))
 
 <img src={useBaseUrl('/img/reference/group-count/example-2.png')} alt="Global relative limit of 70% solution" />
 
@@ -210,7 +210,7 @@ At most 70% of a job's tasks on one host. Rebalancer moves 2 tasks of `job0` fro
 
 `host0` accepts up to 3 tasks of the same job; any other host up to 5 (the global
 limit). Rebalancer moves 2 tasks of `job0` off `host0`; `job1` is left untouched.
-([source](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L256-L304))
+([source](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L256-L304))
 
 <img src={useBaseUrl('/img/reference/group-count/example-3.png')} alt="Per-scope-item absolute limit solution" />
 
@@ -218,7 +218,7 @@ limit). Rebalancer moves 2 tasks of `job0` off `host0`; `job1` is left untouched
 
 `host1` accepts at most 50% of a job's tasks; any other host up to 100%.
 Rebalancer moves half of `job1`'s tasks from `host1` to `host0`.
-([source](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L306-L354))
+([source](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L306-L354))
 
 <img src={useBaseUrl('/img/reference/group-count/example-4.png')} alt="Per-scope-item relative limit solution" />
 
@@ -226,7 +226,7 @@ Rebalancer moves half of `job1`'s tasks from `host1` to `host0`.
 
 `job1` may place at most 3 of its tasks on the same host; any other job up to 4.
 Rebalancer moves 1 task of `job0` and 1 task of `job1`.
-([source](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L356-L403))
+([source](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L356-L403))
 
 <img src={useBaseUrl('/img/reference/group-count/example-5.png')} alt="Per-group absolute limit solution" />
 
@@ -234,7 +234,7 @@ Rebalancer moves 1 task of `job0` and 1 task of `job1`.
 
 `job0` may place up to 60% of its tasks on one host, `job1` up to 50%. Rebalancer
 moves 2 tasks of `job0` and 2 tasks of `job1`.
-([source](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L405-L455))
+([source](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L405-L455))
 
 <img src={useBaseUrl('/img/reference/group-count/example-6.png')} alt="Per-group relative limit solution" />
 
@@ -243,7 +243,7 @@ moves 2 tasks of `job0` and 2 tasks of `job1`.
 `job0` may place up to 2 tasks on `host0` and up to 4 on `host1`; `job1` up to 1
 on `host0`; any other combination up to 5. Rebalancer moves 3 tasks of `job0`
 from `host0` to `host1`; `job1` has no incentive to move.
-([source](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L457-L508))
+([source](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L457-L508))
 
 <img src={useBaseUrl('/img/reference/group-count/example-7.png')} alt="Per-scope-item-and-group absolute limit solution" />
 
@@ -252,7 +252,7 @@ from `host0` to `host1`; `job1` has no incentive to move.
 `job0` may place up to 50% of its tasks on `host0`; any other job up to 80% on any
 host. Rebalancer moves 3 tasks of `job0` off `host0` and 1 task of `job1` off
 `host1`.
-([source](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L568-L615))
+([source](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L568-L615))
 
 <img src={useBaseUrl('/img/reference/group-count/example-8.png')} alt="Per-scope-item-and-group relative limit solution" />
 
@@ -260,7 +260,7 @@ host. Rebalancer moves 3 tasks of `job0` off `host0` and 1 task of `job1` off
 
 A `MIN` bound with a limit of 1: each job must place at least 1 task on every host.
 Rebalancer moves 1 task of `job0` to `host1` and 1 task of `job1` to `host0`.
-([source](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L711-L746))
+([source](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L711-L746))
 
 <img src={useBaseUrl('/img/reference/group-count/example-9.png')} alt="Min bound solution" />
 
@@ -268,7 +268,7 @@ Rebalancer moves 1 task of `job0` to `host1` and 1 task of `job1` to `host0`.
 
 Used as a goal with limit 0 and `squares` enabled---a balance objective that
 spreads each job evenly. Rebalancer moves 2 tasks of `job0` and 2 tasks of `job1`.
-([source](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L794-L835))
+([source](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L794-L835))
 
 <img src={useBaseUrl('/img/reference/group-count/example-10.png')} alt="Squares objective solution" />
 
@@ -277,12 +277,12 @@ spreads each job evenly. Rebalancer moves 2 tasks of `job0` and 2 tasks of `job1
 With `limitRelativeTo = SCOPE_ITEM_UTIL`, `job0` may not account for more than 50%
 of `host0`'s utilization (plus a `MIN` capacity constraint so `host0` is not simply
 emptied). The result leaves `host0` with 2 tasks, one from each job.
-([source](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L837-L887))
+([source](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp#L837-L887))
 
 <img src={useBaseUrl('/img/reference/group-count/example-11.png')} alt="Limit relative to scope-item utilization solution" />
 
 ## Source
 
-- Thrift definition: [`interface/thrift/ProblemSpecs.thrift`](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/thrift/ProblemSpecs.thrift) (`GroupCountSpec`)
-- SpecBuilder: [`materializer/spec_builder/GroupCountSpecBuilder.cpp`](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/materializer/spec_builder/GroupCountSpecBuilder.cpp)---the code that defines this spec's behavior
-- Tests and runnable examples: [`interface/tests/GroupCountTest.cpp`](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp) (C++) and [`interface/py_client/tests/group_count_test.py`](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/py_client/tests/group_count_test.py) (Python)---the unit tests the snippets on this page are drawn from
+- Thrift definition: [`interface/thrift/ProblemSpecs.thrift`](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/thrift/ProblemSpecs.thrift) (`GroupCountSpec`)
+- SpecBuilder: [`materializer/spec_builder/GroupCountSpecBuilder.cpp`](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/materializer/spec_builder/GroupCountSpecBuilder.cpp)---the code that defines this spec's behavior
+- Tests and runnable examples: [`interface/tests/GroupCountTest.cpp`](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupCountTest.cpp) (C++) and [`interface/py_client/tests/group_count_test.py`](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/py_client/tests/group_count_test.py) (Python)---the unit tests the snippets on this page are drawn from

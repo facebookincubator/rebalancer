@@ -116,7 +116,7 @@ its runnable unit test.
 A ColocateGroups constraint with a limit of `2`, alongside a goal to balance tasks
 across hosts. The limit caps each job at two hosts even though the balance goal
 would otherwise spread it wider.
-([source](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/ColocateGroupsTest.cpp#L128-L191))
+([source](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/ColocateGroupsTest.cpp#L128-L191))
 
 **Initial assignment:**
 
@@ -132,7 +132,7 @@ A ColocateGroups constraint with a limit of `3` and weight overrides of `2` for
 `host0` and `host2`, plus a balance goal and an AssignmentAffinities goal making
 `task0` prefer `host0`. Each group ends up exactly at its colocation cost of 3
 (e.g. `job0` pays 2 for `host0` plus 1 for `host1`).
-([source](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/ColocateGroupsTest.cpp#L192-L283))
+([source](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/ColocateGroupsTest.cpp#L192-L283))
 
 **Initial assignment:**
 
@@ -148,7 +148,7 @@ Triplets `(primary{i}, secondary{i}, dependent{i})` where the primary and
 secondary must be on different hosts (a [GroupCount](group-count) constraint of 1
 per ID group), while the dependent must share a host with one of them (a
 ColocateGroups constraint limiting each triplet to at most 2 hosts).
-([source](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/ColocateGroupsTest.cpp#L284-L382))
+([source](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/ColocateGroupsTest.cpp#L284-L382))
 
 **Initial assignment:**
 
@@ -160,6 +160,6 @@ ColocateGroups constraint limiting each triplet to at most 2 hosts).
 
 ## Source
 
-- Thrift definition: [`interface/thrift/ProblemSpecs.thrift`](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/thrift/ProblemSpecs.thrift) (`ColocateGroupsSpec`)
-- SpecBuilder: [`materializer/spec_builder/ColocateGroupsSpecBuilder.cpp`](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/materializer/spec_builder/ColocateGroupsSpecBuilder.cpp)---the code that defines this spec's behavior
-- Tests and runnable examples: [`interface/tests/ColocateGroupsTest.cpp`](https://github.com/facebookincubator/rebalancer/blob/main/algopt/rebalancer/interface/tests/ColocateGroupsTest.cpp)---the unit tests the snippets on this page are drawn from
+- Thrift definition: [`interface/thrift/ProblemSpecs.thrift`](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/thrift/ProblemSpecs.thrift) (`ColocateGroupsSpec`)
+- SpecBuilder: [`materializer/spec_builder/ColocateGroupsSpecBuilder.cpp`](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/materializer/spec_builder/ColocateGroupsSpecBuilder.cpp)---the code that defines this spec's behavior
+- Tests and runnable examples: [`interface/tests/ColocateGroupsTest.cpp`](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/ColocateGroupsTest.cpp)---the unit tests the snippets on this page are drawn from
