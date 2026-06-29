@@ -63,33 +63,31 @@ $PY build/fbcode_builder/getdeps.py --allow-system-packages \
 REBALANCER_PREFIX=$(ls -d /tmp/fbcode_builder_getdeps-*/installed/rebalancer 2>/dev/null | head -1)
 TEST_SOLVE_SRC="$REBALANCER_PREFIX/usr/local/bin/test_solve"
 
-# Belt-and-suspenders: if the getdeps cache was primed before the manifest
-# gained PACKAGING_TEST=ON, test_solve may still be absent. Build it directly
-# from the installed headers/library so the SDK artifact is always complete.
-if [[ ! -f "$TEST_SOLVE_SRC" ]]; then
-    echo "test_solve absent from getdeps install; building directly"
-    mkdir -p "$(dirname "$TEST_SOLVE_SRC")"
-    EXTRA_INCLUDES=""
-    for inc in /tmp/fbcode_builder_getdeps-*/installed/*/include; do
-        [ -d "$inc" ] && EXTRA_INCLUDES="$EXTRA_INCLUDES -I$inc"
-    done
-    clang++ -std=c++20 \
-        -DREBALANCER_OSS_BUILD \
-        -I"$REBALANCER_PREFIX/usr/local/include" \
-        $EXTRA_INCLUDES \
-        -L"$REBALANCER_PREFIX/usr/local/lib" \
-        -lrebalancer -lfolly \
-        -Wl,--allow-shlib-undefined \
-        -o "$TEST_SOLVE_SRC" \
-        /project/tools/packages/test_solve.cpp
-    chmod +x "$TEST_SOLVE_SRC"
-    echo "Built test_solve → $TEST_SOLVE_SRC"
-fi
+# Build test_solve directly from the installed headers and library. This is
+# simpler and more reliable than routing it through cmake/getdeps: cmake's
+# --extra-cmake-defines is excluded from getdeps' cache key, so any cmake-
+# based approach risks stale cache hits that omit the binary. Building it
+# here always produces a fresh binary with the correct flags.
+echo "Building test_solve from installed headers"
+mkdir -p "$(dirname "$TEST_SOLVE_SRC")"
+EXTRA_INCLUDES=""
+for inc in /tmp/fbcode_builder_getdeps-*/installed/*/include; do
+    [ -d "$inc" ] && EXTRA_INCLUDES="$EXTRA_INCLUDES -I$inc"
+done
+clang++ -std=c++20 \
+    -DREBALANCER_OSS_BUILD \
+    -I"$REBALANCER_PREFIX/usr/local/include" \
+    $EXTRA_INCLUDES \
+    -L"$REBALANCER_PREFIX/usr/local/lib" \
+    -lrebalancer -lfolly \
+    -Wl,--allow-shlib-undefined \
+    -o "$TEST_SOLVE_SRC" \
+    /project/tools/packages/test_solve.cpp
+chmod +x "$TEST_SOLVE_SRC"
+echo "Built test_solve → $TEST_SOLVE_SRC"
 
-if [[ -f "$TEST_SOLVE_SRC" ]]; then
-    cp "$TEST_SOLVE_SRC" /tmp/test_solve_pristine
-    echo "Stashed pristine test_solve from $TEST_SOLVE_SRC"
-fi
+cp "$TEST_SOLVE_SRC" /tmp/test_solve_pristine
+echo "Stashed pristine test_solve"
 
 $PY build/fbcode_builder/getdeps.py --allow-system-packages \
     fixup-dyn-deps --strip --src-dir=. rebalancer /project/_artifacts/linux \
