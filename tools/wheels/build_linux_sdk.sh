@@ -69,14 +69,27 @@ TEST_SOLVE_SRC="$REBALANCER_PREFIX/usr/local/bin/test_solve"
 # with -DPACKAGING_TEST=ON (not via the manifest, so not in the cache key)
 # and build just the test_solve target in the already-compiled tree.
 CMAKE_BUILD_DIR=$(ls -d /tmp/fbcode_builder_getdeps-*/build/rebalancer 2>/dev/null | head -1)
-echo "Building test_solve via cmake in $CMAKE_BUILD_DIR"
-# Touch CMakeLists.txt so cmake detects a source change and re-runs CMakeLists.txt
-# fully (not the fast incremental check), ensuring PACKAGING_TEST=ON is processed.
-touch /project/CMakeLists.txt
-cmake -DPACKAGING_TEST=ON -S /project -B "$CMAKE_BUILD_DIR"
-cmake --build "$CMAKE_BUILD_DIR" --target test_solve --parallel "$(nproc)"
+CACHE="$CMAKE_BUILD_DIR/CMakeCache.txt"
+
+# Extract key cmake settings from the getdeps-generated cache so we can
+# reproduce a correct configure in a fresh temp dir. Reusing the existing
+# build dir is unreliable: cmake skips the full configure phase when it
+# thinks nothing changed, so -DPACKAGING_TEST=ON is silently ignored.
+PREFIX_PATH=$(grep "^CMAKE_PREFIX_PATH:" "$CACHE" | cut -d= -f2-)
+C_COMPILER=$(grep "^CMAKE_C_COMPILER:" "$CACHE" | cut -d= -f2-)
+CXX_COMPILER=$(grep "^CMAKE_CXX_COMPILER:" "$CACHE" | cut -d= -f2-)
+
+echo "Building test_solve via fresh cmake build (prefix: $PREFIX_PATH)"
+mkdir -p /tmp/test_solve_build
+cmake -S /project -B /tmp/test_solve_build \
+    -DCMAKE_PREFIX_PATH="$PREFIX_PATH" \
+    -DCMAKE_C_COMPILER="$C_COMPILER" \
+    -DCMAKE_CXX_COMPILER="$CXX_COMPILER" \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DPACKAGING_TEST=ON
+cmake --build /tmp/test_solve_build --target test_solve --parallel "$(nproc)"
 mkdir -p "$(dirname "$TEST_SOLVE_SRC")"
-cp "$CMAKE_BUILD_DIR/test_solve" "$TEST_SOLVE_SRC"
+cp /tmp/test_solve_build/test_solve "$TEST_SOLVE_SRC"
 chmod +x "$TEST_SOLVE_SRC"
 echo "Built test_solve → $TEST_SOLVE_SRC"
 
