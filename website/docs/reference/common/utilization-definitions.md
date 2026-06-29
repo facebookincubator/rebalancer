@@ -2,6 +2,8 @@
 sidebar_position: 3
 ---
 
+import useBaseUrl from '@docusaurus/useBaseUrl';
+
 # Utilization Definitions
 
 In [CapacitySpec](../specs/capacity) and several other specs (such as BalanceSpec,
@@ -49,10 +51,10 @@ The most natural definition, and the default: the objects placed in a scope item
 *after* the proposed moves are performed, i.e. the objects in the scope item in
 the final assignment.
 
-```
- source counts:  { a }        (x has moved out, so it no longer counts)
- dest   counts:  { b, x }     (x has moved in)
-```
+<img src={useBaseUrl('/img/reference/utilization-definitions/after.png')} alt="AFTER: the moved object counts only in the destination container, not the source" />
+
+The source counts `{ a }` (x has moved out, so it no longer counts); the
+destination counts `{ b, x }` (x has moved in).
 
 Use `AFTER` for a standard capacity limit: "the final placement must fit".
 
@@ -63,10 +65,10 @@ moves to. This is useful when a move is not instantaneous in the real system: fo
 example, a replica may have to be loaded on the destination before being dropped
 from the source, so for a while it consumes resources on both.
 
-```
- source counts:  { a, x }     (x still counts here while the move is in flight)
- dest   counts:  { b, x }     (x already counts here too)
-```
+<img src={useBaseUrl('/img/reference/utilization-definitions/during.png')} alt="DURING: the moved object counts in both the source and destination containers" />
+
+The source counts `{ a, x }` (x still counts here while the move is in flight)
+and the destination counts `{ b, x }` (x already counts here too).
 
 `x` is double-counted across the two scope items.
 
@@ -89,20 +91,19 @@ Counts only objects newly moved **into** the scope item. Useful when you want to
 limit incoming work: for example, loading a replica onto a host consumes network
 bandwidth, so you may want to cap how much can arrive at once.
 
-```
- source counts:  { }          (nothing moved in)
- dest   counts:  { x }
-```
+<img src={useBaseUrl('/img/reference/utilization-definitions/new.png')} alt="NEW: only the object newly moved into the destination container counts" />
+
+The source counts `{ }` (nothing moved in); the destination counts `{ x }`.
 
 ## OLD
 
 Counts only objects that started in the scope item but have moved **out** of it
 (they are placed elsewhere in the final assignment).
 
-```
- source counts:  { x }        (x left, so it counts as "old" here)
- dest   counts:  { }
-```
+<img src={useBaseUrl('/img/reference/utilization-definitions/old.png')} alt="OLD: only the object that moved out counts, in the source container" />
+
+The source counts `{ x }` (x left, so it counts as "old" here); the destination
+counts `{ }`.
 
 ## MOVED_DATA
 
