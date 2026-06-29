@@ -72,17 +72,9 @@ echo "Building test_solve from installed headers"
 mkdir -p "$(dirname "$TEST_SOLVE_SRC")"
 EXTRA_INCLUDES=""
 EXTRA_LIBDIRS=""
-EXTRA_LIBS=""
 for dep in /tmp/fbcode_builder_getdeps-*/installed/*/; do
     [ -d "$dep/include" ] && EXTRA_INCLUDES="$EXTRA_INCLUDES -I$dep/include"
-    if [ -d "$dep/lib" ]; then
-        EXTRA_LIBDIRS="$EXTRA_LIBDIRS -L$dep/lib"
-        for so in "$dep/lib"/lib*.so; do
-            [ -f "$so" ] || continue
-            name=$(basename "$so" .so); name="${name#lib}"
-            EXTRA_LIBS="$EXTRA_LIBS -l$name"
-        done
-    fi
+    [ -d "$dep/lib" ]     && EXTRA_LIBDIRS="$EXTRA_LIBDIRS -L$dep/lib"
 done
 clang++ -std=c++20 \
     -DREBALANCER_OSS_BUILD \
@@ -90,9 +82,8 @@ clang++ -std=c++20 \
     $EXTRA_INCLUDES \
     -L"$REBALANCER_PREFIX/usr/local/lib" \
     $EXTRA_LIBDIRS \
-    -Wl,--start-group \
-    -lrebalancer $EXTRA_LIBS \
-    -Wl,--end-group \
+    -lrebalancer -lfolly \
+    -Wl,--copy-dt-needed-entries \
     -Wl,--allow-shlib-undefined \
     -o "$TEST_SOLVE_SRC" \
     /project/tools/packages/test_solve.cpp
