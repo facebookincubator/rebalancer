@@ -77,9 +77,11 @@ if [[ ! -f "$TEST_SOLVE_SRC" ]]; then
     else
         echo "PACKAGING_TEST:BOOL=ON" >> "$CMAKE_BUILD_DIR/CMakeCache.txt"
     fi
-    # Deleting build.ninja forces cmake --build to re-run configure, which
-    # re-reads CMakeLists.txt with PACKAGING_TEST=ON and adds test_solve.
+    # Delete build.ninja then re-run cmake configure (which re-reads
+    # CMakeLists.txt with PACKAGING_TEST=ON from the cache and adds
+    # test_solve), then build the target.
     rm -f "$CMAKE_BUILD_DIR/build.ninja"
+    cmake -B "$CMAKE_BUILD_DIR"
     cmake --build "$CMAKE_BUILD_DIR" --target test_solve --parallel "$(nproc)"
     mkdir -p "$(dirname "$TEST_SOLVE_SRC")"
     BUILT_BIN=$(ls "$CMAKE_BUILD_DIR/test_solve" 2>/dev/null || \
