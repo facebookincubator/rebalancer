@@ -771,6 +771,29 @@ if(NOT SKBUILD)
     # need them to compile against the installed headers.
     install(DIRECTORY ${THRIFT_OUTPUT_DIR}/configerator/ DESTINATION include/configerator
             FILES_MATCHING PATTERN "*.h" PATTERN "*.tcc")
+
+    # Packaging smoke test. PACKAGING_TEST=ON is set in the getdeps manifest
+    # [cmake.defines] so it is part of the cache key and always present in
+    # the getdeps cmake invocation for the SDK artifact build.
+    option(PACKAGING_TEST "Build and install the packaging smoke test binary" OFF)
+    if(PACKAGING_TEST)
+        add_executable(test_solve tools/packages/test_solve.cpp)
+        # test_solve.cpp transitively instantiates folly coro / F14 templates
+        # whose non-inline symbols live in libfolly.so. Add folly and the
+        # fbthrift type-system libs explicitly so the linker can resolve them.
+        target_link_libraries(test_solve PRIVATE
+            rebalancer
+            Folly::folly
+            FBThrift::thriftprotocol
+            FBThrift::thriftmetadata
+            FBThrift::thrifttype
+            FBThrift::rpcmetadata
+        )
+        set_target_properties(test_solve PROPERTIES
+            INSTALL_RPATH "\$ORIGIN/../lib:\$ORIGIN/../lib/rebalancer"
+        )
+        install(TARGETS test_solve RUNTIME DESTINATION bin)
+    endif()
 endif()
 
 # When invoked by scikit-build-core (during a `pip install` / wheel build),
