@@ -83,6 +83,22 @@ class XpressProblem : public ProblemImpl {
   std::optional<IIS> getIIS() override;
   void replay(const std::string& fileName) const override;
 
+  bool supportsNativeQuadratic() const override;
+  bool supportsNativePwl() const override;
+  bool supportsNativeMax() const override;
+  bool supportsIndicatorConstraints() const override;
+  bool setIndicatorOnConstraint(
+      Constraint& ctr,
+      const Variable& binaryVar,
+      int dir) override;
+
+  std::optional<Expression> addNativePwlConstraint(
+      const Expression& x,
+      const std::vector<std::pair<double, double>>& points) override;
+
+  std::optional<Expression> addNativeMaxConstraint(
+      const std::vector<Expression>& inputs) override;
+
  protected:
   virtual void solveForObjectiveAt(int pos, std::optional<double> timeLimit)
       override;
@@ -120,6 +136,10 @@ class XpressProblem : public ProblemImpl {
       const char* solutionName,
       int32_t processingStatus);
   static int customCallback(XPRSprob xprsProblem, void* data);
+  bool usesNativeExpressions() const;
+  void applyNativeConstraints(XPRSprob xprob);
+  void applyNativePwlConstraints(XPRSprob xprob);
+  void applyNativeMaxConstraints(XPRSprob xprob);
   void addMipSolFromInitialValues();
   int callbackImpl(XPRSprob& prob);
 
@@ -128,6 +148,36 @@ class XpressProblem : public ProblemImpl {
   std::string getAlgorithm();
   bool isLoggingDisabled() const;
   void saveDebugData(DebugPhase phase);
+
+  // Specs for native PWL/Max constraints deferred until after loadMat().
+  // XPRSaddpwlcons / XPRSaddgencons need column indices that are only valid
+  // after XPRBloadmat. We store the BCL variable pointers here during model
+  // building and apply the C API calls in solveForObjectiveAt() after
+  // loadMat(). The lists persist across multi-objective solves so that the
+  // native constraints are re-applied before each solve. applyNativeConstraints
+  // first removes any PWL/general constraints left over from a previous solve,
+  // so re-application is idempotent and constraints are never duplicated across
+  // objectives.
+  struct NativePwlSpec {
+    std::shared_ptr<VariableImpl> xVar; // auxiliary BCL input variable
+    std::shared_ptr<VariableImpl> yVar; // BCL result variable
+    std::vector<std::pair<double, double>> points;
+  };
+  struct NativeMaxSpec {
+    std::shared_ptr<VariableImpl> resultVar;
+    std::vector<std::shared_ptr<VariableImpl>> inputVars;
+  };
+  std::vector<NativePwlSpec> nativePwlConstraints_;
+  std::vector<NativeMaxSpec> nativeMaxConstraints_;
+  // Count and starting index of PWL / general constraints we registered in the
+  // last applyNativeConstraints() call. The starting index is recorded before
+  // each add (via XPRS_PWLCONS / XPRS_GENCONS attribute queries) so that
+  // deletion targets exactly our additions even if other code paths have added
+  // constraints before ours.
+  int nOwnedPwlCons_{0};
+  int nOwnedGenCons_{0};
+  int ownedPwlConsStartIdx_{0};
+  int ownedGenConsStartIdx_{0};
 
   dashoptimization::XPRBprob problem_;
   folly::F14FastMap<std::shared_ptr<const VariableImpl>, double> initialValues_;

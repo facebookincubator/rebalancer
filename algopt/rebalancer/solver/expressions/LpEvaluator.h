@@ -72,6 +72,20 @@ class LpEvaluator : public Evaluator {
   const algopt::InsertOrderedFastSet<std::pair<ExprPtr, bool>>&
   getOptimizationIntentsInTopologicalOrder() const;
 
+  bool supportsNativeQuadratic() const;
+  bool supportsNativePwl() const;
+  bool supportsNativeMax() const;
+  bool supportsIndicatorConstraints() const;
+  bool setIndicatorOnConstraint(
+      algopt::lp::Constraint& ctr,
+      const algopt::lp::Variable& binaryVar,
+      int dir) const;
+  std::optional<algopt::lp::Expression> addNativePwlConstraint(
+      const algopt::lp::Expression& x,
+      const std::vector<std::pair<double, double>>& points) const;
+  std::optional<algopt::lp::Expression> addNativeMaxConstraint(
+      const std::vector<algopt::lp::Expression>& inputs) const;
+
  private:
   LpContext& context_;
   Problem& problem_;

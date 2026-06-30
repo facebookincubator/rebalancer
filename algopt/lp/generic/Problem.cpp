@@ -100,6 +100,40 @@ std::optional<double> ProblemImpl::getScaledMaxCoefRatio() {
   return std::nullopt;
 }
 
+bool ProblemImpl::supportsNativeQuadratic() const {
+  return false;
+}
+
+bool ProblemImpl::supportsNativePwl() const {
+  return false;
+}
+
+bool ProblemImpl::supportsNativeMax() const {
+  return false;
+}
+
+bool ProblemImpl::supportsIndicatorConstraints() const {
+  return false;
+}
+
+bool ProblemImpl::setIndicatorOnConstraint(
+    Constraint& /* ctr */,
+    const Variable& /* binaryVar */,
+    int /* dir */) {
+  return false;
+}
+
+std::optional<Expression> ProblemImpl::addNativePwlConstraint(
+    const Expression& /* x */,
+    const std::vector<std::pair<double, double>>& /* points */) {
+  return std::nullopt;
+}
+
+std::optional<Expression> ProblemImpl::addNativeMaxConstraint(
+    const std::vector<Expression>& /* inputs */) {
+  return std::nullopt;
+}
+
 std::optional<NumericalStabilityInfo> ProblemImpl::getNumericalStability(
     bool /* computeExactKappa */) {
   return std::nullopt;
@@ -517,6 +551,40 @@ const ProblemImpl& Problem::get() const {
 
 std::optional<IIS> Problem::getIIS() {
   return problem_->getIIS();
+}
+
+bool Problem::supportsNativeQuadratic() const {
+  return problem_->supportsNativeQuadratic();
+}
+
+bool Problem::supportsNativePwl() const {
+  return problem_->supportsNativePwl();
+}
+
+bool Problem::supportsNativeMax() const {
+  return problem_->supportsNativeMax();
+}
+
+bool Problem::supportsIndicatorConstraints() const {
+  return problem_->supportsIndicatorConstraints();
+}
+
+bool Problem::setIndicatorOnConstraint(
+    Constraint& ctr,
+    const Variable& binaryVar,
+    int dir) {
+  return problem_->setIndicatorOnConstraint(ctr, binaryVar, dir);
+}
+
+std::optional<Expression> Problem::addNativePwlConstraint(
+    const Expression& x,
+    const std::vector<std::pair<double, double>>& points) {
+  return problem_->addNativePwlConstraint(x, points);
+}
+
+std::optional<Expression> Problem::addNativeMaxConstraint(
+    const std::vector<Expression>& inputs) {
+  return problem_->addNativeMaxConstraint(inputs);
 }
 
 } // namespace facebook::algopt::lp

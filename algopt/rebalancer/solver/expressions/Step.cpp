@@ -18,6 +18,8 @@
 #include "algopt/rebalancer/solver/expressions/LpEvaluator.h"
 #include "algopt/rebalancer/solver/expressions/Transform.h"
 
+#include <stdexcept>
+
 namespace {
 constexpr std::string_view type = "Step";
 }
@@ -87,6 +89,46 @@ algopt::lp::Expression Step::encodeLp(
 
   // At this stage childLb <= algopt::kEpsilon and ub >=
   // algopt::kEpsilon
+
+  // Native indicator-constraint path. We commit to it only after confirming the
+  // backend supports indicator constraints, so we never leave the two
+  // contradictory hard constraints (childLp >= tolerance AND childLp <= 0) in
+  // the model when falling through to the Big-M formulation below.
+  if (evaluator.supportsIndicatorConstraints()) {
+    const auto& childLp = child;
+    auto stepVar = lp_bool_var(evaluator, "step");
+    // Mirror the Big-M smallestPositiveValue logic: integer children need a
+    // threshold of 1.0 so the LP relaxation cannot satisfy stepVar==1 while
+    // child sits between 0 and 1; continuous children use the absolute
+    // tolerance.
+    const double posThreshold = childIsInteger ? 1.0 : tolerance;
+    // stepVar == 1 => childLp >= posThreshold (child is strictly positive)
+    auto posConstraint = evaluator.addLpConstraint(
+        childLp >= posThreshold, "step_indicator_pos");
+    // stepVar == 0 => childLp <= 0 (child is non-positive)
+    auto zeroConstraint =
+        evaluator.addLpConstraint(childLp <= 0, "step_indicator_zero");
+    // Indicator direction: 1 = "var==1 activates constraint", 0 = "var==0
+    // activates". supportsIndicatorConstraints() guarantees the backend accepts
+    // indicators, so both calls are expected to succeed. Evaluate both
+    // unconditionally (no short-circuit) so that a partial failure doesn't
+    // leave one constraint as a conditional indicator and the other as an
+    // unconditional hard constraint. If either fails, the Problem now holds the
+    // two contradictory hard constraints (childLp >= posThreshold AND
+    // childLp <= 0) and cannot be recovered: callers MUST discard the entire
+    // Problem on this throw, not catch it and retry only the Step encoding.
+    const bool posOk =
+        evaluator.setIndicatorOnConstraint(posConstraint, stepVar, 1);
+    const bool zeroOk =
+        evaluator.setIndicatorOnConstraint(zeroConstraint, stepVar, 0);
+    if (posOk && zeroOk) {
+      return stepVar;
+    }
+    throw std::runtime_error(
+        "Native Step indicator attachment failed despite the backend "
+        "reporting indicator-constraint support; Problem must be discarded");
+  }
+
   auto var = lp_bool_var(evaluator, "step");
   constraintOwner.newCtr(evaluator, "step_ub", child <= ub * var);
 

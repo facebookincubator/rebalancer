@@ -30,6 +30,7 @@
 
 #include <filesystem>
 #include <map>
+#include <numeric>
 #include <optional>
 #include <stdexcept>
 #include <string_view>
@@ -410,6 +411,18 @@ const std::map<std::string_view, int> kDoubleParamCodes = {
 
 #undef REBALANCER_XPRS_PARAM
 
+// Throws std::runtime_error if rc != 0, appending the Xpress error string.
+// Centralises the repeated XPRSgetlasterror + throw pattern across all new
+// native-constraint API calls.
+static void throwIfXpressError(int rc, XPRSprob xprob, const std::string& msg) {
+  if (rc == 0) {
+    return;
+  }
+  char errBuf[512] = {};
+  XPRSgetlasterror(xprob, errBuf);
+  throw std::runtime_error(fmt::format("{} (rc={}): {}", msg, rc, errBuf));
+}
+
 } // namespace
 
 namespace facebook::algopt::lp::detail {
@@ -602,7 +615,12 @@ void XpressProblem::solveForObjectiveAt(
   problem_.newCtr(nullptr, problem_.newVar() == 0);
 
   auto lpConfigs = getAlgorithm();
-  // Provide initial assignment as a warm-start hint via XPRSaddmipsol
+  // Provide initial assignment as a warm-start hint via XPRSaddmipsol.
+  // Note: when native PWL/Max constraints are used, the warm-start only covers
+  // the original model variables. Auxiliary variables introduced by
+  // addNativePwlConstraint/addNativeMaxConstraint (pwl_x, pwl_y, max_result,
+  // max_input_*) are absent from the hint; Xpress will complete or discard
+  // the partial warm-start at its discretion.
   if (!initialValues_.empty()) {
     XLOG(DBG1) << "Adding warm-start solution from initial values";
     saveDebugData(DebugPhase::PreWarmStart);
@@ -622,9 +640,58 @@ void XpressProblem::solveForObjectiveAt(
     );
   }
 
-  // Perform main solve
+  // Perform main solve. When native PWL/Max constraints are registered, we
+  // must call loadMat() first to get valid column indices, apply the C API
+  // constraints (XPRSaddpwlcons / XPRSaddgencons), then call XPRSmipoptimize
+  // directly — bypassing BCL's mipOptimize which would call loadMat() again
+  // and wipe the C API additions.
   saveDebugData(DebugPhase::PreMain);
-  problem_.mipOptimize(lpConfigs.c_str());
+  if (usesNativeExpressions()) {
+    problem_.loadMat();
+    applyNativeConstraints(problem_.getXPRSprob());
+    XPRSprob xprob = problem_.getXPRSprob();
+    throwIfXpressError(
+        XPRSmipoptimize(xprob, lpConfigs.c_str()),
+        xprob,
+        "XPRSmipoptimize failed");
+    // XPRBgetsol reads BCL's internal solution cache, which is only populated
+    // by BCL's own solve path. After a direct XPRSmipoptimize call, we must
+    // explicitly load the Xpress MIP solution into BCL so XPRBgetsol works.
+    int mipStatus = XPRS_MIP_INFEAS;
+    throwIfXpressError(
+        XPRSgetintattrib(xprob, XPRS_MIPSTATUS, &mipStatus),
+        xprob,
+        "XPRSgetintattrib(XPRS_MIPSTATUS) failed");
+    if (mipStatus == XPRS_MIP_OPTIMAL || mipStatus == XPRS_MIP_SOLUTION) {
+      int ncols = 0;
+      throwIfXpressError(
+          XPRSgetintattrib(xprob, XPRS_COLS, &ncols),
+          xprob,
+          "XPRSgetintattrib(XPRS_COLS) failed");
+      if (ncols > 0) {
+        std::vector<double> solValues(ncols, 0.0);
+        // XPRSgetmipsol is deprecated since v44.00; XPRSgetsolution returns
+        // the same MIP solution for columns [0, ncols).
+        throwIfXpressError(
+            XPRSgetsolution(xprob, nullptr, solValues.data(), 0, ncols - 1),
+            xprob,
+            fmt::format("XPRSgetsolution failed (ncols={})", ncols));
+        const bool isOptimal = (mipStatus == XPRS_MIP_OPTIMAL);
+        problem_.loadMIPSol(solValues.data(), ncols, isOptimal);
+      }
+    } else {
+      // No incumbent found (infeasible, time-limit, unbounded, etc.).
+      // BCL's solution cache is not updated — callers must check
+      // XPRS_MIPSTATUS or the solver result status directly rather than
+      // relying on BCL's XPRBgetsol for outcome detection.
+      XLOG(DBG1) << fmt::format(
+          "Native-constraint solve: no incumbent (XPRS_MIPSTATUS={}); "
+          "BCL solution cache left unsynced",
+          mipStatus);
+    }
+  } else {
+    problem_.mipOptimize(lpConfigs.c_str());
+  }
   saveDebugData(DebugPhase::PostMain);
 
   timer_.stop();
@@ -955,6 +1022,141 @@ void XpressProblem::addStartValue(
   }
 }
 
+void XpressProblem::applyNativeConstraints(XPRSprob xprob) {
+  // Called after loadMat() finalizes column indices, once per objective solve.
+  // XPRSaddpwlcons / XPRSaddgencons are additive, so first remove our own
+  // constraints left over from a previous solve to keep re-application
+  // idempotent. We track both the count and the starting index recorded when
+  // the constraints were first added (ownedPwl/GenConsStartIdx_) so that
+  // deletion targets exactly our additions regardless of what other code paths
+  // may have added before ours.
+  //
+  // Index-stability assumptions this deletion-by-range relies on:
+  //  (a) No other code path adds or deletes PWL/general constraints between the
+  //      previous solve and this call, so our additions remain the contiguous
+  //      tail [ownedStartIdx, ownedStartIdx + nOwned).
+  //  (b) Xpress preserves stable, contiguous indices for surviving constraints
+  //      across XPRSdelpwlcons / XPRSdelgencons (i.e. it does not gap-fill or
+  //      renumber the constraints we did not delete). Since we only ever delete
+  //      our own tail range and re-add immediately afterwards, no surviving
+  //      constraint is renumbered in practice.
+  if (nOwnedPwlCons_ > 0) {
+    std::vector<int> pwlInd(nOwnedPwlCons_);
+    std::iota(pwlInd.begin(), pwlInd.end(), ownedPwlConsStartIdx_);
+    const int delRc = XPRSdelpwlcons(xprob, nOwnedPwlCons_, pwlInd.data());
+    throwIfXpressError(
+        delRc,
+        xprob,
+        fmt::format(
+            "XPRSdelpwlcons failed (nOwnedPwlCons={})", nOwnedPwlCons_));
+    nOwnedPwlCons_ = 0;
+  }
+  if (nOwnedGenCons_ > 0) {
+    std::vector<int> genInd(nOwnedGenCons_);
+    std::iota(genInd.begin(), genInd.end(), ownedGenConsStartIdx_);
+    throwIfXpressError(
+        XPRSdelgencons(xprob, nOwnedGenCons_, genInd.data()),
+        xprob,
+        fmt::format(
+            "XPRSdelgencons failed (nOwnedGenCons={})", nOwnedGenCons_));
+    nOwnedGenCons_ = 0;
+  }
+
+  applyNativePwlConstraints(xprob);
+  applyNativeMaxConstraints(xprob);
+}
+
+void XpressProblem::applyNativePwlConstraints(XPRSprob xprob) {
+  // Record the starting index before our additions so applyNativeConstraints
+  // can delete exactly [ownedPwlConsStartIdx_, ownedPwlConsStartIdx_ +
+  // nOwnedPwlCons_) on the next re-application. This relies on no other code
+  // path adding PWL constraints between this add and the subsequent delete.
+  throwIfXpressError(
+      XPRSgetintattrib(xprob, XPRS_PWLCONS, &ownedPwlConsStartIdx_),
+      xprob,
+      "XPRSgetintattrib(XPRS_PWLCONS) failed");
+  for (const auto& spec : nativePwlConstraints_) {
+    const auto* xVar = dynamic_cast<const XpressVariable*>(spec.xVar.get());
+    const auto* yVar = dynamic_cast<const XpressVariable*>(spec.yVar.get());
+    if (xVar == nullptr || yVar == nullptr) {
+      throw std::runtime_error(
+          "Native PWL constraint requires XpressVariable operands, but a "
+          "non-Xpress VariableImpl was provided");
+    }
+    int xcol = xVar->get().getColNum();
+    int ycol = yVar->get().getColNum();
+    const int npoints = static_cast<int>(spec.points.size());
+    // CSR-style start offsets: start[0]=0, start[1]=npoints (1 constraint).
+    const int start[2] = {0, npoints};
+    std::vector<double> xvals, yvals;
+    xvals.reserve(npoints);
+    yvals.reserve(npoints);
+    for (const auto& [xi, yi] : spec.points) {
+      xvals.push_back(xi);
+      yvals.push_back(yi);
+    }
+    throwIfXpressError(
+        XPRSaddpwlcons(
+            xprob, 1, npoints, &xcol, &ycol, start, xvals.data(), yvals.data()),
+        xprob,
+        fmt::format("XPRSaddpwlcons failed (xcol={}, ycol={})", xcol, ycol));
+    ++nOwnedPwlCons_;
+  }
+}
+
+void XpressProblem::applyNativeMaxConstraints(XPRSprob xprob) {
+  // Record the starting index before our additions so applyNativeConstraints
+  // can delete exactly these constraints on the next re-application.
+  throwIfXpressError(
+      XPRSgetintattrib(xprob, XPRS_GENCONS, &ownedGenConsStartIdx_),
+      xprob,
+      "XPRSgetintattrib(XPRS_GENCONS) failed");
+  for (const auto& spec : nativeMaxConstraints_) {
+    const auto* resultVar =
+        dynamic_cast<const XpressVariable*>(spec.resultVar.get());
+    if (resultVar == nullptr) {
+      throw std::runtime_error(
+          "Native MAX constraint requires an XpressVariable result, but a "
+          "non-Xpress VariableImpl was provided");
+    }
+    const int resultCol = resultVar->get().getColNum();
+    std::vector<int> inputCols;
+    inputCols.reserve(spec.inputVars.size());
+    for (const auto& inputImpl : spec.inputVars) {
+      const auto* inputVar =
+          dynamic_cast<const XpressVariable*>(inputImpl.get());
+      if (inputVar == nullptr) {
+        throw std::runtime_error(
+            "Native MAX constraint requires XpressVariable inputs, but a "
+            "non-Xpress VariableImpl was provided");
+      }
+      inputCols.push_back(inputVar->get().getColNum());
+    }
+    // CSR-style column offsets: colstart[0]=0, colstart[1]=nInputs (1
+    // constraint).
+    const int colstart[2] = {0, static_cast<int>(inputCols.size())};
+    const int contype = XPRS_GENCONS_MAX;
+    throwIfXpressError(
+        XPRSaddgencons(
+            xprob,
+            1,
+            static_cast<int>(inputCols.size()),
+            0,
+            &contype,
+            &resultCol,
+            colstart,
+            inputCols.data(),
+            nullptr,
+            nullptr),
+        xprob,
+        fmt::format(
+            "XPRSaddgencons failed (resultCol={}, nInputs={})",
+            resultCol,
+            inputCols.size()));
+    ++nOwnedGenCons_;
+  }
+}
+
 void XpressProblem::addMipSolFromInitialValues() {
   // Ensure the problem matrix is loaded so variables have column indices
   problem_.loadMat();
@@ -1015,6 +1217,143 @@ void XpressProblem::replay(const std::string& /* fileName */) const {
   // pointer, so reasonable effort is required to make this work which we will
   // revisit if need be (TODO: @nks)
   //  XPRSreadprob(prob, "problem_from_file", "v")
+}
+
+bool XpressProblem::supportsNativeQuadratic() const {
+  return algopt::useXpressNativeQuadratic();
+}
+
+bool XpressProblem::supportsNativePwl() const {
+  return algopt::useXpressNativePwl();
+}
+
+bool XpressProblem::supportsNativeMax() const {
+  return algopt::useXpressNativeMax();
+}
+
+bool XpressProblem::usesNativeExpressions() const {
+  return !nativePwlConstraints_.empty() || !nativeMaxConstraints_.empty();
+}
+
+bool XpressProblem::supportsIndicatorConstraints() const {
+  return algopt::useXpressIndicatorConstraints();
+}
+
+bool XpressProblem::setIndicatorOnConstraint(
+    Constraint& ctr,
+    const Variable& binaryVar,
+    int dir) {
+  auto* xpressCtr = dynamic_cast<XpressConstraint*>(ctr.get().get());
+  const auto* xpressVar =
+      dynamic_cast<const XpressVariable*>(binaryVar.get().get());
+  if (!xpressCtr || !xpressVar) {
+    return false;
+  }
+  // Indicator constraints require a binary variable (XPRB_BV type with
+  // bounds [0, 1]). Reject anything else to prevent silent mis-formulations.
+  if (xpressVar->get().getType() != XPRB_BV) {
+    throw std::invalid_argument(
+        fmt::format(
+            "setIndicatorOnConstraint: binaryVar must be a binary variable "
+            "(XPRB_BV), got type {}",
+            xpressVar->get().getType()));
+  }
+  return xpressCtr->get().setIndicator(dir, xpressVar->get()) == 0;
+}
+
+std::optional<algopt::lp::Expression> XpressProblem::addNativePwlConstraint(
+    const algopt::lp::Expression& x,
+    const std::vector<std::pair<double, double>>& points) {
+  // Create auxiliary input variable x_aux and link it to x via BCL constraint.
+  // XPRSaddpwlcons requires the input variable to be within the breakpoint
+  // range, so we set explicit bounds. Column indices are invalid until
+  // loadMat(); we defer the XPRSaddpwlcons call to the presolve callback.
+  if (points.size() < 2) {
+    throw std::invalid_argument(
+        fmt::format(
+            "PWL breakpoints must have at least 2 points, got {}",
+            points.size()));
+  }
+  for (const auto i : folly::irange(size_t{1}, points.size())) {
+    if (points[i].first <= points[i - 1].first) {
+      throw std::invalid_argument(
+          fmt::format(
+              "PWL breakpoints must be strictly increasing by x: x[{}]={} <= x[{}]={}",
+              i,
+              points[i].first,
+              i - 1,
+              points[i - 1].first));
+    }
+  }
+  auto xAuxImpl = makeVar("pwl_x");
+  auto yImpl = makeVar("pwl_y");
+
+  // Bound x_aux to the PWL breakpoint range so Xpress doesn't declare the
+  // problem infeasible due to the input variable potentially being
+  // out-of-range. The equality constraint x_aux == x (added below) therefore
+  // also constrains x itself to this range — unlike the Big-M
+  // convex-combination encoding, which clips out-of-range values to the
+  // boundary. IMPORTANT: callers must guarantee that x cannot reach a value
+  // outside [points.front().x, points.back().x] at any feasible solution.
+  // Static expression bounds (from lowerAndUpperBounds) are a necessary but
+  // not sufficient check — additional model constraints could push x outside
+  // the breakpoint domain at runtime, silently converting a feasible problem
+  // to infeasible. Do NOT invoke this path when such runtime exceedance is
+  // possible.
+  xAuxImpl->setLB(points.front().first);
+  xAuxImpl->setUB(points.back().first);
+
+  double yMin = points.front().second;
+  double yMax = points.front().second;
+  for (const auto& [xi, yi] : points) {
+    yMin = std::min(yMin, yi);
+    yMax = std::max(yMax, yi);
+  }
+  yImpl->setLB(yMin);
+  yImpl->setUB(yMax);
+
+  auto xAuxExprImpl = xAuxImpl->makeExpression(1.0);
+  auto xNegImpl = x.get()->clone();
+  xNegImpl->multiply(-1.0);
+  xAuxExprImpl->add(xNegImpl);
+  newConstraint(xAuxExprImpl->makeEqualZeroRelation(), "pwl_x_link");
+
+  nativePwlConstraints_.push_back({xAuxImpl, yImpl, points});
+  return algopt::lp::Expression(yImpl->makeExpression(1.0));
+}
+
+std::optional<algopt::lp::Expression> XpressProblem::addNativeMaxConstraint(
+    const std::vector<algopt::lp::Expression>& inputs) {
+  if (inputs.empty()) {
+    throw std::invalid_argument(
+        "MAX constraint requires at least 1 input expression");
+  }
+  // Create auxiliary input variables linked to each input expression, and a
+  // result variable. The XPRSaddgencons call is deferred to
+  // solveForObjectiveAt() after loadMat() makes column indices valid.
+  // makeVar() for a continuous variable defaults to LB=-XPRB_INFINITY, so
+  // max_result is already correctly unbounded from below (negative inputs
+  // work).
+  // TODO: tighten the UB to max(ub_i) across inputs once LP expression bound
+  // tracking is available, to strengthen the LP relaxation.
+  auto resultImpl = makeVar("max_result");
+
+  std::vector<std::shared_ptr<VariableImpl>> inputVarImpls;
+  inputVarImpls.reserve(inputs.size());
+  for (const auto i : folly::irange(inputs.size())) {
+    auto inputImpl = makeVar(fmt::format("max_input_{}", i));
+    auto inputAuxExprImpl = inputImpl->makeExpression(1.0);
+    auto inputNegImpl = inputs[i].get()->clone();
+    inputNegImpl->multiply(-1.0);
+    inputAuxExprImpl->add(inputNegImpl);
+    newConstraint(
+        inputAuxExprImpl->makeEqualZeroRelation(),
+        fmt::format("max_input_link_{}", i));
+    inputVarImpls.push_back(inputImpl);
+  }
+
+  nativeMaxConstraints_.push_back({resultImpl, std::move(inputVarImpls)});
+  return algopt::lp::Expression(resultImpl->makeExpression(1.0));
 }
 
 } // namespace facebook::algopt::lp::detail

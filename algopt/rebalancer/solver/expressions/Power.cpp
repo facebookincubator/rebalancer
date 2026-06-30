@@ -54,6 +54,17 @@ algopt::lp::Expression Power::lp(
     const LpEvaluator& evaluator,
     bool minimizing,
     const interface::OptimalSolverSpec& configs) {
+  if (minimizing && evaluator.supportsNativeQuadratic() && exponent_ == 2) {
+    auto* child = getOnlyChildRawPtr();
+    const auto [childLb, childUb] = evaluator.lowerAndUpperBounds(child);
+    // Only use native quadratic when the child is provably non-negative.
+    // When childLb < 0 the fallback uses max(0, child)^2 (via tempVar with
+    // implicit lb=0), which differs from the native child^2.
+    if (childLb >= 0) {
+      auto& childLp = evaluator.lp(child, minimizing, configs);
+      return childLp * childLp;
+    }
+  }
   if (minimizing && exponent_ == 2) {
     // If the intent is to minimize and the exponent is 2, we represent it
     // natively in LP by using quadratic expressions.

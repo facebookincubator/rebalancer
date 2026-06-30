@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <folly/CPortability.h>
+
 #ifndef REBALANCER_OSS_BUILD
 #include "algopt/lp/environment/fb/SetupEnvironments.h"
 #endif
@@ -66,6 +68,37 @@ inline constexpr bool isManifoldAvailable() {
 #else
   return true;
 #endif
+}
+
+// Runtime flags controlling native Xpress operator paths. Exposed through
+// reference-returning accessors rather than plain mutable globals so they are
+// not flagged as non-const global variables, while still retaining
+// process-wide state via the function-local statics. FOLLY_EXPORT places the
+// accessors on the dynamic symbol table so the dynamic linker dedups to a
+// single instance of each flag at runtime. Only meaningful when
+// isXpressAvailable() returns true. Default false preserves existing
+// approximation behavior.
+//
+// Thread-safety: these flags are plain `bool` and are NOT synchronized. They
+// are intended to be set once at program startup, before any solver use, and
+// then only read during model construction. Mutating a flag from one thread
+// while another thread reads it during a solve is an unsynchronized data race
+// and is unsupported.
+FOLLY_EXPORT inline bool& useXpressNativePwl() {
+  static bool value = false;
+  return value;
+}
+FOLLY_EXPORT inline bool& useXpressNativeQuadratic() {
+  static bool value = false;
+  return value;
+}
+FOLLY_EXPORT inline bool& useXpressNativeMax() {
+  static bool value = false;
+  return value;
+}
+FOLLY_EXPORT inline bool& useXpressIndicatorConstraints() {
+  static bool value = false;
+  return value;
 }
 
 } // namespace facebook::algopt

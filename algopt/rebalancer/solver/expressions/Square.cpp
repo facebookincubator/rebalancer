@@ -14,6 +14,7 @@
 
 #include "algopt/rebalancer/solver/expressions/Square.h"
 
+#include "algopt/lp/generic/Operators.h"
 #include "algopt/rebalancer/solver/expressions/LpEvaluator.h"
 
 namespace {
@@ -60,6 +61,10 @@ algopt::lp::Expression Square::lp(
     const LpEvaluator& evaluator,
     bool minimizing,
     const interface::OptimalSolverSpec& configs) {
+  if (minimizing && evaluator.supportsNativeQuadratic()) {
+    auto& childLp = evaluator.lp(getOnlyChildRawPtr(), minimizing, configs);
+    return childLp * childLp;
+  }
   return approximate_function(
       evaluator, minimizing, configs, [](double x) { return x * x; });
 }

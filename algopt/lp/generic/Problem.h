@@ -202,6 +202,43 @@ class ProblemImpl {
   // ratio via computeScaledMaxCoefRatio(). Default returns nullopt.
   virtual std::optional<double> getScaledMaxCoefRatio();
 
+  // Native solver constraint extensions. Default implementations return
+  // false/nullopt so backends that lack support fall through to approximations.
+
+  // Returns true if the backend supports native quadratic expressions
+  // (i.e., multiplying two LP expressions directly without auxiliary
+  // variables). Default false.
+  virtual bool supportsNativeQuadratic() const;
+
+  // Returns true if the backend supports native piecewise-linear constraints
+  // (see addNativePwlConstraint). Default false.
+  virtual bool supportsNativePwl() const;
+
+  // Returns true if the backend supports native MAX constraints
+  // (see addNativeMaxConstraint). Default false.
+  virtual bool supportsNativeMax() const;
+
+  // Returns true if the backend supports indicator constraints (see
+  // setIndicatorOnConstraint). Lets callers commit to the indicator-based
+  // formulation before adding any constraints. Default false.
+  virtual bool supportsIndicatorConstraints() const;
+
+  // Sets ctr as an indicator constraint: binaryVar == dir => ctr is active.
+  // Returns false if unsupported.
+  virtual bool
+  setIndicatorOnConstraint(Constraint& ctr, const Variable& binaryVar, int dir);
+
+  // Adds a native PWL constraint y = PWL(x) over breakpoints.
+  // Returns the y expression, or nullopt if unsupported.
+  virtual std::optional<Expression> addNativePwlConstraint(
+      const Expression& x,
+      const std::vector<std::pair<double, double>>& points);
+
+  // Adds a native MAX constraint result = max(inputs).
+  // Returns the result expression, or nullopt if unsupported.
+  virtual std::optional<Expression> addNativeMaxConstraint(
+      const std::vector<Expression>& inputs);
+
   // Extracts numerical stability information from the solved model.
   // Default returns nullopt.
   virtual std::optional<NumericalStabilityInfo> getNumericalStability(
@@ -361,6 +398,19 @@ class Problem {
   std::optional<IIS> getIIS();
 
   const ProblemImpl& get() const;
+
+  // Native solver constraint extensions. Forward to the underlying ProblemImpl.
+  bool supportsNativeQuadratic() const;
+  bool supportsNativePwl() const;
+  bool supportsNativeMax() const;
+  bool supportsIndicatorConstraints() const;
+  bool
+  setIndicatorOnConstraint(Constraint& ctr, const Variable& binaryVar, int dir);
+  std::optional<Expression> addNativePwlConstraint(
+      const Expression& x,
+      const std::vector<std::pair<double, double>>& points);
+  std::optional<Expression> addNativeMaxConstraint(
+      const std::vector<Expression>& inputs);
 
  private:
   std::unique_ptr<ProblemImpl> problem_;

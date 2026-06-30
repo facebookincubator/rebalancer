@@ -191,6 +191,25 @@ algopt::lp::Expression Piecewise::lp(
     const LpEvaluator& evaluator,
     bool minimizing,
     const interface::OptimalSolverSpec& configs) {
+  if (evaluator.supportsNativePwl() && points_.size() >= 2) {
+    auto* child = getOnlyChildRawPtr();
+    const auto [childLb, childUb] = evaluator.lowerAndUpperBounds(child);
+    const double pwlXMin = points_.front().first;
+    const double pwlXMax = points_.back().first;
+    // Only use native PWL when the child's proven bounds fit within the
+    // breakpoint domain. The native path clamps the auxiliary input variable
+    // to [pwlXMin, pwlXMax] via equality, which would render the problem
+    // infeasible if the child can reach values outside that range.
+    // Note: static expression bounds are a necessary but not sufficient
+    // check — additional model constraints could push x outside the
+    // breakpoint domain at runtime, silently causing infeasibility.
+    if (childLb >= pwlXMin && childUb <= pwlXMax) {
+      const auto& xLp = evaluator.lp(child, minimizing, configs);
+      if (auto result = evaluator.addNativePwlConstraint(xLp, points_)) {
+        return *result;
+      }
+    }
+  }
   return build_piecewise_linear_function(
       points_, getOnlyChild(), evaluator, minimizing, configs);
 }

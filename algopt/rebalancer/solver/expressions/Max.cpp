@@ -338,6 +338,26 @@ algopt::lp::Expression Max::lp(
     }
   }
 
+  if (evaluator.supportsNativeMax()) {
+    std::vector<algopt::lp::Expression> childExprs;
+    childExprs.reserve(children().size());
+    for (const auto& child : children()) {
+      childExprs.push_back(evaluator.lp(child.get(), minimizing, configs));
+    }
+    if (auto result = evaluator.addNativeMaxConstraint(childExprs)) {
+      return *result;
+    }
+    // addNativeMaxConstraint returned nullopt; fall through to Big-M below.
+    // evaluator.lp() is memoized, so any re-evaluation of children in the
+    // Big-M path is a cache hit — no duplicate variables or constraints.
+    //
+    // Contract for overrides: addNativeMaxConstraint must be all-or-nothing —
+    // either return a valid expression having added the native max constraint,
+    // or return nullopt having performed no model mutation. Returning nullopt
+    // after partially adding auxiliary variables/constraints would leave them
+    // orphaned in the model alongside the Big-M formulation added here.
+  }
+
   auto max_var = lp_cont_var(evaluator);
   // This is only filled for max of max case
   vector<algopt::lp::Expression> child_exprs;

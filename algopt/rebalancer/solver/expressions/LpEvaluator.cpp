@@ -124,4 +124,39 @@ LpEvaluator::getOptimizationIntentsInTopologicalOrder() const {
   return optimizationIntents_;
 }
 
+bool LpEvaluator::supportsNativeQuadratic() const {
+  return problem_.lp_store.getLpProblem().supportsNativeQuadratic();
+}
+
+bool LpEvaluator::supportsNativePwl() const {
+  return problem_.lp_store.getLpProblem().supportsNativePwl();
+}
+
+bool LpEvaluator::supportsNativeMax() const {
+  return problem_.lp_store.getLpProblem().supportsNativeMax();
+}
+
+bool LpEvaluator::supportsIndicatorConstraints() const {
+  return problem_.lp_store.getLpProblem().supportsIndicatorConstraints();
+}
+
+bool LpEvaluator::setIndicatorOnConstraint(
+    algopt::lp::Constraint& ctr,
+    const algopt::lp::Variable& binaryVar,
+    int dir) const {
+  return problem_.lp_store.getLpProblem().setIndicatorOnConstraint(
+      ctr, binaryVar, dir);
+}
+
+std::optional<algopt::lp::Expression> LpEvaluator::addNativePwlConstraint(
+    const algopt::lp::Expression& x,
+    const std::vector<std::pair<double, double>>& points) const {
+  return problem_.lp_store.getLpProblem().addNativePwlConstraint(x, points);
+}
+
+std::optional<algopt::lp::Expression> LpEvaluator::addNativeMaxConstraint(
+    const std::vector<algopt::lp::Expression>& inputs) const {
+  return problem_.lp_store.getLpProblem().addNativeMaxConstraint(inputs);
+}
+
 } // namespace facebook::rebalancer
