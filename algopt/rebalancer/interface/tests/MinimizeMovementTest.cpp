@@ -42,17 +42,17 @@ TEST_P(MinimizeMovementTest, SameCostPerObjectWithoutNormalization) {
           {"host2", {}},
       });
 
-  // Both tasks prefer host1: task0 has an affinity of 10, task1 has an affinity
-  // of 3.
+  // Both tasks prefer host1: task0 has an affinity of 3, task1 has an affinity
+  // of 10.
   facebook::rebalancer::interface::AssignmentAffinitiesSpec
       assignmentAffinitiesSpec;
   assignmentAffinitiesSpec.name() = "affinities";
   assignmentAffinitiesSpec.scope() = "host";
   assignmentAffinitiesSpec.affinities() = {
       facebook::rebalancer::interface::makeAssignmentAffinity(
-          "task0", "host1", 10.0),
+          "task0", "host1", 3.0),
       facebook::rebalancer::interface::makeAssignmentAffinity(
-          "task1", "host1", 3.0),
+          "task1", "host1", 10.0),
   };
 
   solver->addGoal(assignmentAffinitiesSpec);
@@ -76,11 +76,11 @@ TEST_P(MinimizeMovementTest, SameCostPerObjectWithoutNormalization) {
   auto solution = solver->solve();
   auto assignment = *solution.assignment();
 
-  // We expect task0 to move from host0 to host1 because the affinity gain (10)
-  // is greater than the movement cost (4), while task1 should not move because
+  // We expect task1 to move from host0 to host1 because the affinity gain (10)
+  // is greater than the movement cost (4), while task0 should not move because
   // the affinity gain (3) is less than the movement cost (4).
-  EXPECT_EQ("host1", assignment["task0"]);
-  EXPECT_EQ("host0", assignment["task1"]);
+  EXPECT_EQ("host0", assignment["task0"]);
+  EXPECT_EQ("host1", assignment["task1"]);
 
   const auto& initialGoal =
       *solution.initialGlobalObjective()->goals()->at(0).objs();
