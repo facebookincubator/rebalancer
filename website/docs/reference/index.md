@@ -74,7 +74,7 @@ to the spec's unit tests.
 | [AvoidMoving](specs/avoid-moving) | Constraint | Prevent the listed objects from moving | [unit tests](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/AvoidMovingTest.cpp) |
 | [GroupMoveLimit](specs/group-move-limit) | Constraint | Limit how many objects of a group may move | [unit tests](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/GroupMoveLimitSpecTest.cpp) |
 | [MovesInProgress](specs/moves-in-progress) | Constraint | Account for objects already moving between containers | [unit tests](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/MovesInProgressTest.cpp) |
-| MinimizeMovement | Both | Minimize the number (or dimension-weighted amount) of objects moved | [unit tests](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/MinimizeMovementTest.cpp) |
+| [MinimizeMovement](specs/minimize-movement) | Both | Minimize the number (or dimension-weighted amount) of objects moved | [unit tests](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/MinimizeMovementTest.cpp) |
 
 ### Affinities
 
