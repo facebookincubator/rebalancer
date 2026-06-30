@@ -51,7 +51,7 @@ to the spec's unit tests.
 | Spec | Type | Description | Examples |
 |------|------|-------------|----------|
 | [Balance](specs/balance) | Goal | Balance a dimension's utilization evenly across scope items | [unit tests](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/BalanceTest.cpp) |
-| UtilIncreaseCost | Goal | Penalize raising a scope item's utilization above a lower bound | [unit tests](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/UtilIncreaseCostTest.cpp) |
+| [UtilIncreaseCost](specs/util-increase-cost) | Goal | Penalize raising a scope item's utilization above a lower bound | [unit tests](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/UtilIncreaseCostTest.cpp) |
 | [MinimizeContainers](specs/minimize-containers) | Goal | Minimize the number of scope items used | [unit tests](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/MinimizeContainersTest.cpp) |
 | [MaximizeAllocation](specs/maximize-allocation) | Goal | Maximize utilization on a set of scope items | [unit tests](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/MaximizeAllocationTest.cpp) |
 | MinimizeNthLargestUtilization | Goal | Minimize the n-th largest scope-item utilization (n is 0-based) | [unit tests](https://github.com/facebook/rebalancer/blob/main/algopt/rebalancer/interface/tests/MinimizeNthLargestUtilizationTest.cpp) |
